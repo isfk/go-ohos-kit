@@ -34,6 +34,7 @@ extern int32_t gokit_remaining(void);
 extern char *gokit_inspect(int32_t fd, char *name);
 extern void gokit_lifecycle(int32_t foreground);
 extern void gokit_accel(double x, double y, double z);
+extern char *gokit_analyze_pixels(void *data, size_t length, int32_t width, int32_t height, int32_t stride);
 extern int32_t gokit_rows_count(void);
 extern uint8_t *gokit_rows(int32_t offset, int32_t limit, size_t *length);
 extern char *gokit_rows_json(int32_t offset, int32_t limit);
@@ -225,6 +226,31 @@ static napi_value Inspect(napi_env env, napi_callback_info info) {
     return out;
 }
 
+// analyze(pixels, width, height[, stride]): what a decoded picture looks like.
+// The ArrayBuffer is borrowed for the call — Go never keeps the pointer.
+static napi_value Analyze(napi_env env, napi_callback_info info) {
+    size_t argc = 4;
+    napi_value argv[4];
+    if (napi_get_cb_info(env, info, &argc, argv, NULL, NULL) != napi_ok || argc < 3) {
+        napi_throw_type_error(env, NULL, "analyze(pixels, width, height[, stride])");
+        return NULL;
+    }
+    void *data = NULL;
+    size_t length = 0;
+    if (napi_get_arraybuffer_info(env, argv[0], &data, &length) != napi_ok) {
+        napi_throw_type_error(env, NULL, "analyze: arg 0 must be an ArrayBuffer of RGBA pixels");
+        return NULL;
+    }
+    int32_t width = 0, height = 0, stride = 0;
+    if (napi_get_value_int32(env, argv[1], &width) != napi_ok) return NULL;
+    if (napi_get_value_int32(env, argv[2], &height) != napi_ok) return NULL;
+    if (argc > 3) napi_get_value_int32(env, argv[3], &stride);
+    char *json = gokit_analyze_pixels(data, length, width, height, stride);
+    napi_value out = NULL;
+    if (json) out = toJS(env, json);
+    return out;
+}
+
 // lifecycle(foreground): 1 on screen, 0 in the background.
 static napi_value Lifecycle(napi_env env, napi_callback_info info) {
     size_t argc = 1;
@@ -295,6 +321,7 @@ static napi_value Init(napi_env env, napi_value exports) {
         {"remove", NULL, Remove, NULL, NULL, NULL, napi_default, NULL},
         {"remaining", NULL, Remaining, NULL, NULL, NULL, napi_default, NULL},
         {"inspect", NULL, Inspect, NULL, NULL, NULL, napi_default, NULL},
+        {"analyze", NULL, Analyze, NULL, NULL, NULL, napi_default, NULL},
         {"lifecycle", NULL, Lifecycle, NULL, NULL, NULL, napi_default, NULL},
         {"rowsCount", NULL, RowsCount, NULL, NULL, NULL, napi_default, NULL},
         {"rows", NULL, Rows, NULL, NULL, NULL, napi_default, NULL},

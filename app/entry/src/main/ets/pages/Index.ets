@@ -2,10 +2,9 @@
 // asking the core for data and listening for what it says has changed.
 
 import { sensor } from '@kit.SensorServiceKit';
-import { photoAccessHelper } from '@kit.MediaLibraryKit';
-import { fileIo as fs } from '@kit.CoreFileKit';
 import { CameraCard } from '../CameraCard';
-import { gocore, Event, FileInfo, LevelReading, Row, Todo } from '../GoCore';
+import { PhotoCard } from '../PhotoCard';
+import { gocore, Event, LevelReading, Row, Todo } from '../GoCore';
 
 @Entry
 @Component
@@ -15,9 +14,6 @@ struct Index {
   @State remaining: number = 0;
   /** The core's goroutine pushing a line a second: the bridge, both ways. */
   @State heartbeat: string = '';
-  /** A photo the system opened, as the core reads it. */
-  @State photo: FileInfo | undefined = undefined;
-  @State photoError: string = '';
   /** The compact wire against JSON, measured on this phone. */
   @State bench: string = '';
   /** The accelerometer, smoothed and turned into degrees by the core. */
@@ -92,38 +88,6 @@ struct Index {
   }
 
   /**
-   * A platform capability the app doesn't write itself: the system's photo
-   * picker hands back a URI, we open it and hand the descriptor to Go, which
-   * reads it and works out what it is. The UI never sees the bytes.
-   */
-  private async pickPhoto(): Promise<void> {
-    this.photoError = '';
-    try {
-      const picker = new photoAccessHelper.PhotoViewPicker();
-      const chosen = await picker.select({
-        MIMEType: photoAccessHelper.PhotoViewMIMETypes.IMAGE_TYPE,
-        maxSelectNumber: 1,
-      });
-      const uri: string = chosen.photoUris.length > 0 ? chosen.photoUris[0] : '';
-      if (uri.length === 0) {
-        return;
-      }
-      const file = fs.openSync(uri, fs.OpenMode.READ_ONLY);
-      const parts = uri.split('/');
-      const name: string = parts.length > 0 ? parts[parts.length - 1] : 'photo';
-      const result = gocore.inspect(file.fd, name);
-      fs.closeSync(file);
-      if (result.ok) {
-        this.photo = result.file;
-      } else {
-        this.photoError = result.error ?? 'the core could not read it';
-      }
-    } catch (err) {
-      this.photoError = `${err}`;
-    }
-  }
-
-  /**
    * The same 2000 rows twice: once as JSON (bytes → string → objects), once in
    * the compact form (bytes → objects). This is what the binary path is for.
    */
@@ -159,15 +123,6 @@ struct Index {
     this.bench = `${gocore.rowsCount()} rows · ${page}: JSON ${jsonMs.toFixed(1)}ms/${(jsonBytes / kb).toFixed(0)}KB` +
       ` · binary ${binMs.toFixed(1)}ms/${(binBytes / kb).toFixed(0)}KB · wire only ${wireMs.toFixed(1)}ms` +
       ` · e.g. ${first}`;
-  }
-
-  private photoLine(): string {
-    const p = this.photo;
-    if (p === undefined) {
-      return this.photoError.length > 0 ? this.photoError : 'no photo yet';
-    }
-    const mb = (p.bytes / (1024 * 1024)).toFixed(1);
-    return `${p.kind} · ${mb} MB · ${p.sha256.substring(0, 12)}…`;
   }
 
   private add(): void {
@@ -211,22 +166,8 @@ struct Index {
       }
       .width('100%')
 
-      // A capability the UI asks the platform for, and the core does the work.
-      Row({ space: 12 }) {
-        Button('Check a photo')
-          .fontSize(14)
-          .backgroundColor('#1F0A59F7')
-          .fontColor('#0A59F7')
-          .onClick(() => {
-            this.pickPhoto();
-          })
-        Text(this.photoLine())
-          .fontSize(12)
-          .fontColor('#99000000')
-          .layoutWeight(1)
-          .maxLines(2)
-      }
-      .width('100%')
+      // A photo the platform takes and decodes, and the core measures.
+      PhotoCard()
 
       // A platform callback at 50 Hz, into Go, and back out smoothed.
       Row({ space: 12 }) {

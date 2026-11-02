@@ -13,9 +13,9 @@ ArkTS / ArkUI  ──import 'libgocore.so'──▶  NAPI 桥  ──▶  Go 内
 
 | | 数字 |
 |---|---|
-| 桥 | 467 行（`go/main_linux.go` 147 + `go/napi_linux.c` 320），13 个 `//export` |
-| Go 内核 | 530 行逻辑 + 165 行测试（纯 Go，Mac 上 `go test`） |
-| 产物 | `libgocore.so` 4.1 MB，依赖只有 `libace_napi` / `libhilog` / `libc` |
+| 桥 | 519 行（`go/main_linux.go` 172 + `go/napi_linux.c` 347），14 个 `//export` |
+| Go 内核 | 690 行逻辑 + 310 行测试（纯 Go，Mac 上 `go test`） |
+| 产物 | `libgocore.so` 4.2 MB，依赖只有 `libace_napi` / `libhilog` / `libc` |
 
 ## 为什么不用「Go 全包 UI」
 
@@ -80,9 +80,10 @@ cp app/build-profile.example.json5 app/build-profile.json5   # 或者直接跑 r
 
 ```text
 go/                         Go 内核（编成 libgocore.so）
-  core/                     纯 Go：状态、事件、持久化、文件鉴定、水平仪
-    core.go                 530 行逻辑
-    core_test.go            165 行测试，Mac 上直接跑
+  core/                     纯 Go：状态、事件、持久化、文件鉴定、水平仪、像素分析
+    core.go                 待办、事件、文件鉴定
+    image.go                像素数学：亮度、直方图、主色、8×8 亮度图
+    core_test.go            310 行测试，Mac 上直接跑
   main_linux.go             //go:build linux && cgo：13 个 //export，只做搬运
   napi_linux.c              NAPI 模块：JS ↔ Go（唯一需要 Node-API 知识的地方）
   cgo_linux.go              链接的系统库（libace_napi、libhilog）
@@ -108,6 +109,7 @@ app/                        HarmonyOS 工程（DevEco 结构）
   entry/src/main/ets/
     GoCore.ts               类型化的内核封装（唯一知道 JSON 的地方）
     CameraCard.ets          相机：权限 + surface + 生命周期
+    PhotoCard.ets           拍照/选图 → 平台解码 → Go 量像素
     pages/Index.ets         界面：纯 ArkUI
   entry/src/main/cpp/types/libgocore/index.d.ts   内核的 TS 类型
 ```
@@ -154,7 +156,7 @@ C 侧用 `napi_create_threadsafe_function` 把事件搬到主线程——**这�
 - 大块数据（图片、几 MB 的列表）别用 JSON，用 `napi_create_arraybuffer` 传
   `[]byte`——省一次拷贝和一次解析。
 
-## 接平台能力：三个由浅到深的例子
+## 接平台能力：四个由浅到深的例子
 
 ### 一、一次性：系统相册 → Go 做真活
 
@@ -236,7 +238,48 @@ session.commitConfig(); session.start();
   `@StorageLink(...) @Watch(...)` 接住。相机在后台开着是实打实的 bug（耗电 + 占设备）。
 - **预览 profile 别贪大**：这台机器最大档是 2688×1216，铺到小面板里纯属浪费，≤1280 取最大即可。
 
-### 三个例子的共性
+### 四、真像素：平台解码，Go 做数学
+
+照片要「看懂」就得碰像素。这里有个分工问题：**解码留给平台，数学留给 Go**——
+鸿蒙的解码器认识相机写出的所有格式（含 HEIF）还能顺手缩放，Go 不需要知道 JPEG 是什么；
+而像素数学是纯函数，能在 Mac 上测。
+
+```ts
+// ArkTS：系统解码 + 缩到 320 宽，拿 RGBA
+const source = image.createImageSource(file.fd);
+const pixels = await source.createPixelMap({
+  desiredSize: { width, height },
+  desiredPixelFormat: image.PixelMapFormat.RGBA_8888,
+});
+const buffer = new ArrayBuffer(width * height * 4);
+await pixels.readPixelsToBuffer(buffer);
+const result = gocore.analyze(buffer, width, height);   // ArrayBuffer → Go，借指针不拷贝语义
+```
+
+```go
+// Go：亮度、直方图、主色、8×8 亮度图，全是整数运算
+a, err := core.AnalyzePixels(px, width, height, stride)   // → {MeanLuma, Histo[8], Grid[64], Colors}
+```
+
+实测（真机，同一段 ArkTS 换两个图源）：
+
+```
+240×320 · 300 KB RGBA · 67% bright · 3.5 ms in Go     ← 相册里 2.5 MB 的秋景
+240×320 · 300 KB RGBA · 33% bright · 3.8 ms in Go     ← 系统相机现拍的 3.0 MB 照片
+```
+
+300 KB RGBA 过桥 + 全部数学 ≈ **3.5 ms**（约 85 MB/s），UI 直接画：8×8 亮度方块、
+8 根直方图、三个主色。缩到 320 宽是刻意的——12 MP 全量算一遍要 300 ms，而结论一样。
+
+**要点**
+
+- **`stride` 是真的**：平台缓冲按行对齐，行尾有填充字节；当 `width*4` 处理会让画面斜切。
+  `readPixelsToBuffer` 给的是紧排的，但接口留了 `stride` 参数，测试里也覆盖了填充行。
+- **主色是按像素数统计的**，所以一张一半天空的照片里「主色」会是浅色。这是算术，不是判断；
+  想要「最鲜艳的颜色」得另算一个指标。
+- **别把解码塞进 Go**：`image/jpeg` 能解 JPEG，但解不了 HEIF，而相机默认存 HEIF。
+
+### 四个例子的共性
 
 - **高频回调在 Go 里节流**：50Hz 进来、30Hz 出去。不要在回调里改 ArkTS 状态。
 - **传 fd，不传路径**：系统 picker 的 URI 不是普通路径，`fs.openSync` 之后把 `fd`
@@ -336,14 +379,16 @@ platform/ohos/new.sh myapp --bundle com.x.y # 换包名（会摘掉旧签名，�
 
 `app/` 是个待办清单：Go 管状态、去重、持久化到 `filesDir/todos.json`，还有一个
 goroutine 每秒推一个心跳（右上角 "up 12s"）；ArkTS 只做渲染和转发用户操作。
-旁边挂了三张卡：`Check a photo`（相册 → fd → Go）、水平仪（50Hz 加速度计）、
-`Start camera`（权限 + surface + 后台关闭），外加一个量传输格式的 `Measure 20k`。
+旁边挂了四张卡：`Photo` / `Camera`（拍照或选图 → 平台解码 → Go 量像素）、
+水平仪（50Hz 加速度计）、`Start camera`（权限 + surface + 后台关闭），
+外加一个量传输格式的 `Measure 20k`。
 
 真机验过的清单：
 
 - 同步调用（增 / 改 / 删），异步推送（goroutine → 主线程，心跳）
 - 沙箱持久化：重启 App 后待办还在
 - 免权限系统 picker → fd → Go 判格式 + 算哈希
+- 系统相机拍照 + 相册选图，两条路都到同一段像素分析（3.5–3.8 ms / 300 KB RGBA）
 - 50Hz 加速度计（`50 samples/s`，同页其它部分不受影响）
 - 相机预览 + 按 Home 后 242ms 关闭
 - 2000 行列表的三种传输格式实测（见上表）

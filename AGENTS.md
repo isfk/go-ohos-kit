@@ -15,14 +15,17 @@ NAPI 桥         ← go/napi_linux.c：只搬运，不含业务
 Go 内核         ← go/core：状态、逻辑、IO；goroutine 随便开
 ```
 
-## 三条铁律
+## 四条铁律
 
 1. **`go/core/` 必须保持纯 Go**：不 cgo、不 import 任何 HarmonyOS 相关的包、不认识
    `filesDir`。它要能在 Mac 上 `go test ./core/` 跑通——这是唯一不用设备就能验证的那部分。
    路径、平台句柄一律从 ArkTS 传进来（参数或 `io.Reader`/`fd`）。
-2. **业务逻辑进 `core`**。`go/main_linux.go` 只做搬运（解参数 → 调 core → 序列化），
+2. **平台的东西留在平台侧**：解码（HEIF/JPEG 都归系统解码器）、权限、surface、Kit 全在
+   ArkTS；Go 只收已经规整的数据（RGBA 字节、fd、JSON）。别在 Go 里塞 `image/jpeg` 去解相机
+   照片——相机默认存 HEIF。
+3. **业务逻辑进 `core`**。`go/main_linux.go` 只做搬运（解参数 → 调 core → 序列化），
    `go/napi_linux.c` 只做桥（NAPI ↔ cgo）。往这两个文件里塞业务，就是在把可测的东西变不可测。
-3. **不要动 `platform/ohos/runtime/` 里的三个补丁**，除非在升级 Go。那时按
+4. **不要动 `platform/ohos/runtime/` 里的三个补丁**，除非在升级 Go。那时按
    `scripts/check-runtime.sh` 的提示做，并保证 `scripts/check.sh` 里的硬断言还成立：
    **产物的 `TLS_TPREL64` 重定位计数必须为 0**。
 
@@ -80,6 +83,8 @@ Go 内核         ← go/core：状态、逻辑、IO；goroutine 随便开
 - `aboutToDisappear` 抓不到 Home 键，后台处理要接 ability 的 `onBackground`（`AppStorage`）。
 - 鸿蒙里环境变量是空的（空 argv/envp 补丁），沙箱路径必须从 ArkTS 传进 Go。
 - 大块数据别用 JSON，用 `ArrayBuffer` + 按需解码（2000 行这个量级 JSON 完全够用，别优化错方向）。
+- 像素缓冲**按行对齐**：`stride` 不等于 `width*4`，当紧排处理会把画面斜切。
+- 12 MP 全量算像素要 ~300 ms；先缩到 320 宽（约 3.5 ms），结论一样。
 
 ## 已被证伪的说法（别再写回文档）
 

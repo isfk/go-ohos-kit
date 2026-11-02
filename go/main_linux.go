@@ -81,6 +81,31 @@ func gokit_inspect(fd C.int, name *C.char) *C.char {
 	return C.CString(string(out))
 }
 
+// gokit_analyze_pixels describes a picture the UI decoded: the platform's
+// decoder handles every format the camera writes (HEIF included), and the
+// maths — brightness, histogram, colours — is the core's, so it's testable
+// without a phone. The buffer belongs to JS and is only borrowed here.
+//
+//export gokit_analyze_pixels
+func gokit_analyze_pixels(data unsafe.Pointer, length C.size_t, width, height, stride C.int) *C.char {
+	if data == nil || length == 0 {
+		return errorJSON("no pixels")
+	}
+	px := unsafe.Slice((*byte)(data), int(length))
+	analysis, err := core.AnalyzePixels(px, int(width), int(height), int(stride))
+	if err != nil {
+		return errorJSON(err.Error())
+	}
+	out, err := json.Marshal(struct {
+		OK    bool          `json:"ok"`
+		Image core.Analysis `json:"image"`
+	}{true, analysis})
+	if err != nil {
+		return errorJSON(err.Error())
+	}
+	return C.CString(string(out))
+}
+
 //export gokit_rows_count
 func gokit_rows_count() C.int { return C.int(store.RowCount()) }
 

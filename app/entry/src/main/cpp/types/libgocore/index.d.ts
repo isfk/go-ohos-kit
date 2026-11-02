@@ -38,6 +38,12 @@ export function remaining(): number;
 /** What a file the system opened is: `{ok, file}` or `{ok:false, error}`. */
 export function inspect(fd: number, name: string): string;
 
+/**
+ * What a decoded picture looks like: `{ok, image}` or `{ok:false, error}`.
+ * pixels is RGBA_8888, width×height, row stride in bytes (0 = packed).
+ */
+export function analyze(pixels: ArrayBuffer, width: number, height: number, stride?: number): string;
+
 /** The app moved on screen (1) or to the background (0). */
 export function lifecycle(foreground: number): void;
 

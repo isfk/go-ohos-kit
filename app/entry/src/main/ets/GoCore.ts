@@ -44,6 +44,34 @@ export interface InspectResult {
   error?: string;
 }
 
+/** One of the colours that make up a picture (core.ColorShare). */
+export interface ColorShare {
+  hex: string;
+  share: number;
+}
+
+/** A picture, in numbers (core.Analysis). */
+export interface ImageAnalysis {
+  width: number;
+  height: number;
+  meanLuma: number;
+  meanRgb: number[];
+  /** Eight percentages, darkest to brightest: the bars the UI draws. */
+  histo: number[];
+  /** 8×8 brightness 0..100, row by row: the grid the UI draws. */
+  grid: number[];
+  colors: ColorShare[];
+  /** How long the core's maths took, in microseconds. */
+  micros: number;
+}
+
+/** An analysis' answer: the picture, or why not. */
+export interface AnalyzeResult {
+  ok: boolean;
+  image?: ImageAnalysis;
+  error?: string;
+}
+
 /** What the core tells the UI (core.Event): a new list, or a line of text. */
 export interface Event {
   kind: string;
@@ -103,6 +131,20 @@ export class GoCore {
 
   remaining(): number {
     return core.remaining();
+  }
+
+  /**
+   * Describes decoded pixels: brightness, histogram, the colours that make it
+   * up, and where the light falls. The decoding is the platform's job (its
+   * decoder reads HEIF, which the core has no business knowing about); the
+   * arithmetic is the core's.
+   */
+  analyze(pixels: ArrayBuffer, width: number, height: number, stride: number = 0): AnalyzeResult {
+    try {
+      return JSON.parse(core.analyze(pixels, width, height, stride)) as AnalyzeResult;
+    } catch (err) {
+      return { ok: false, error: `${err}` };
+    }
   }
 
   /**
