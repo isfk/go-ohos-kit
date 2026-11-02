@@ -84,6 +84,30 @@ func TestTrackAddsUpTheWalk(t *testing.T) {
 	}
 }
 
+func TestTrackIgnoresJitterWhenStandingStill(t *testing.T) {
+	var tr Track
+	t0 := time.Unix(1700000000, 0)
+	// Standing still with a ±20 m fix, wandering 8 m each way: the numbers say
+	// "no idea", so the track must not claim 500 m walked.
+	here := GeoFix{Lat: 39.9879, Lon: 116.4719, Accuracy: 20}
+	tr.Fix(here, t0)
+	for i := 1; i <= 30; i++ {
+		off := GeoFix{Lat: here.Lat + 0.00007, Lon: here.Lon, Accuracy: 20} // ~8 m
+		tr.Fix(off, t0.Add(time.Duration(i)*time.Second))
+		tr.Fix(here, t0.Add(time.Duration(i)*time.Second+500*time.Millisecond))
+	}
+	p := tr.Fix(here, t0.Add(40*time.Second))
+	if p.Moved != 0 {
+		t.Errorf("Moved = %.1f m while standing still in ±20 m noise, want 0", p.Moved)
+	}
+	if p.Speed != 0 {
+		t.Errorf("Speed = %.2f m/s while standing still, want 0", p.Speed)
+	}
+	if p.Fixes != 62 {
+		t.Errorf("Fixes = %d, want every reading counted (62)", p.Fixes)
+	}
+}
+
 func TestTrackIgnoresARepeatedFix(t *testing.T) {
 	var tr Track
 	t0 := time.Unix(1700000000, 0)

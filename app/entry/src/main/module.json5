@@ -17,6 +17,11 @@
         "name": "ohos.permission.ACCELEROMETER"
       },
       {
+        // Lets a continuous task survive the app leaving the screen. System
+        // granted: install-time, no prompt.
+        "name": "ohos.permission.KEEP_BACKGROUND_RUNNING"
+      },
+      {
         // Location, coarse and precise: the two must be asked for together —
         // asking for LOCATION alone is refused.
         "name": "ohos.permission.APPROXIMATELY_LOCATION",
@@ -57,6 +62,11 @@
         "startWindowIcon": "$media:startIcon",
         "startWindowBackground": "$color:start_window_background",
         "exported": true,
+        // The kinds of continuous task this ability may start; 'location'
+        // matches the LOCATION mode in LocationCard.ets.
+        "backgroundModes": [
+          "location"
+        ],
         "skills": [
           {
             "entities": [

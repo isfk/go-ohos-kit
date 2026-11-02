@@ -114,6 +114,7 @@ app/                        HarmonyOS 工程（DevEco 结构）
     GoCore.ts               类型化的内核封装（唯一知道 JSON 的地方）
     CameraCard.ets          相机：权限 + surface + 生命周期
     PhotoCard.ets           拍照/选图 → 平台解码 → Go 量像素
+    LocationCard.ets        定位订阅 + 长时任务（后台继续跑）
     pages/Index.ets         界面：纯 ArkUI
   entry/src/main/cpp/types/libgocore/index.d.ts   内核的 TS 类型
 ```
@@ -160,7 +161,7 @@ C 侧用 `napi_create_threadsafe_function` 把事件搬到主线程——**这�
 - 大块数据（图片、几 MB 的列表）别用 JSON，用 `napi_create_arraybuffer` 传
   `[]byte`——省一次拷贝和一次解析。
 
-## 接平台能力：四个由浅到深的例子
+## 接平台能力：五个由浅到深的例子
 
 ### 一、一次性：系统相册 → Go 做真活
 
@@ -284,7 +285,47 @@ a, err := core.AnalyzePixels(px, width, height, stride)   // → {MeanLuma, Hist
   想要「最鲜艳的颜色」得另算一个指标。
 - **别把解码塞进 Go**：`image/jpeg` 能解 JPEG，但解不了 HEIF，而相机默认存 HEIF。
 
-### 四个例子的共性
+### 五、订阅 + 后台：定位与长时任务
+
+定位有两层：**权限**（一对，粗+精必须一起申请）和**后台**（要长时任务，否则一切到后台就被冻结）。
+
+```ts
+// 前台：一个订阅，回调里一句话交给 Go
+const request: geoLocationManager.ContinuousLocationRequest = {
+  interval: 1,
+  locationScenario: geoLocationManager.PowerConsumptionScenario.HIGH_POWER_CONSUMPTION,
+};
+geoLocationManager.on('locationChange', request, (loc) => {
+  gocore.location(loc.latitude, loc.longitude, loc.accuracy);   // → 走了多远、朝哪、多快
+});
+
+// 后台：向系统申请一个「长时任务」（会有一条常驻通知，用户能看见、能停）
+await backgroundTaskManager.startBackgroundRunning(ctx, ['location'], await wantAgent.getWantAgent(info));
+```
+
+`module.json5` 里两处缺一不可：`requestPermissions` 加 `ohos.permission.KEEP_BACKGROUND_RUNNING`
+（system_grant），ability 加 `"backgroundModes": ["location"]`。
+
+实测（真机，静止放桌上）：
+
+| | 前台 | 切后台 45 s 后回来 |
+|---|---|---|
+| fix 数 | 2 | **61**（≈1/s，一直没断） |
+| 日志 | — | `NotifyContinuousTask Resume … mode: 4`、`location:background to provide network position` |
+
+**要点 / 坑**
+
+- **「走了 234 m」是假的**：人没动，±22 m 的 GPS 抖动累加起来就是一分钟 234 米。现在按
+  `step > max(上次精度, 2 m)` 过滤——小于精度半径的位移不是位移，界面照样显示 `±22 m`
+  让用户知道为什么。修完同样场景是 `0 m walked · 0.0 m/s`。
+- **`interval` 只是上限**，不是节奏保证：静止时系统会合并上报（实测 40 s 里只有 3 个 fix，
+  另一次 87 s 里有 61 个）。别在 UI 上承诺「每秒一个点」。
+- **后台就要有通知**：长时任务必然在通知栏留一条，这是设计（用户有权看见谁在定位）。
+- **`background` 是 ArkUI 组件的内置属性名**，`@Local background` 会编译报
+  "not assignable to the same property in base type"——换个名字（这里是 `bgTask`）。
+- **回前台不会自动恢复**如果你没开长时任务（那时后台就被停了）；开了长时任务则一直在跑。
+
+### 五个例子的共性
 
 - **高频回调在 Go 里节流**：50Hz 进来、30Hz 出去。不要在回调里改 ArkTS 状态。
 - **传 fd，不传路径**：系统 picker 的 URI 不是普通路径，`fs.openSync` 之后把 `fd`
@@ -394,6 +435,7 @@ goroutine 每秒推一个心跳（右上角 "up 12s"）；ArkTS 只做渲染和�
 - 沙箱持久化：重启 App 后待办还在
 - 免权限系统 picker → fd → Go 判格式 + 算哈希
 - 系统相机拍照 + 相册选图，两条路都到同一段像素分析（3.5–3.8 ms / 300 KB RGBA）
+- 定位：权限（粗+精）→ 订阅 → Go 算距离/方位/速度；长时任务让它在后台继续报点
 - 50Hz 加速度计（`50 samples/s`，同页其它部分不受影响）
 - 相机预览 + 按 Home 后 242ms 关闭
 - 2000 行列表的三种传输格式实测（见上表）

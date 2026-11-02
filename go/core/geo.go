@@ -85,11 +85,18 @@ func (t *Track) Fix(f GeoFix, now time.Time) GeoPoint {
 
 	step := Distance(t.last, f)
 	dt := now.Sub(t.lastT).Seconds()
-	// A fix identical to the last one says nothing new: GPS repeats itself
-	// when standing still.
-	if step > 0.01 || dt > 1 {
-		t.moved += step
-		if dt > 0.05 {
+
+	// A step smaller than the fix's own accuracy is noise, not walking: standing
+	// still with ±22 m of GPS jitter otherwise "walks" hundreds of metres in a
+	// minute. The fix still counts, and the last position still moves with it —
+	// otherwise one bad fix would poison the next step.
+	walks := step > max(t.last.Accuracy, 2)
+
+	if walks || dt > 1 {
+		if walks {
+			t.moved += step
+		}
+		if dt > 0.05 && walks {
 			// Smoothed, so one noisy pair doesn't swing the number the UI shows —
 			// but the first measurement is the first measurement: damping it
 			// against a made-up zero would understate a real walk.
