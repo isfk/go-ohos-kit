@@ -1,6 +1,8 @@
 # What can be checked without a phone: the logic's tests and the patches that
-# let Go live in a HarmonyOS app. The cross build needs the HarmonyOS NDK,
-# which a plain runner doesn't have, so it's skipped there (check.sh says so).
+# let Go live in a HarmonyOS app. The cross build needs the HarmonyOS NDK, which
+# a plain runner doesn't have, so it's skipped there (check.sh says so) — and so
+# is the bridge package itself: it's cgo against NDK headers (hilog/log.h), which
+# is why check.sh tests ./core/... rather than ./....
 name: check
 on:
   push:

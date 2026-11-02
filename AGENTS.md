@@ -97,6 +97,10 @@ Go 内核         ← go/core：状态、逻辑、IO；goroutine 随便开
 
 ## 假警报（别浪费时间）
 
+- **Mac 上看不到「Linux-only cgo」问题**：桥的文件全是 `*_linux.c`，在 macOS 上根本不会被
+  编译；CI 是 Linux，`go test ./...` 会把它们编进去，然后死在 `hilog/log.h: No such file`
+  （这台机器没装鸿蒙 NDK）。所以 `scripts/check.sh` 的主机侧检查只跑 `./core/...`，
+  桥的正确性由交叉编译那步负责。
 - **gopls 对 `go/main_linux.go` 报一堆 `undefined: C.xxx`**：gopls 没有 cgo/linux 环境，
   那是被 build tag 排除的 cgo 文件的孤儿分析。以交叉编译为准。
 - **clangd / semgrep 对 `go/napi_linux.c` 报缺失头文件**：那文件用 `__has_include` 守卫，

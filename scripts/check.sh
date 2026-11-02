@@ -12,11 +12,17 @@ cd "$root"
 build=1
 [ "${1:-}" = "--no-build" ] && build=
 
+# go/ itself is cgo + the HarmonyOS NDK (hilog/log.h): it only compiles with the
+# cross compiler, in the build step below. So the host-side checks name the pure
+# Go packages instead of ./... — which would fail on any Linux box without the
+# NDK (a Mac hides it, because every bridge file is *_linux.c).
+pkgs=./core/...
+
 echo "== go test =="
-(cd go && go test ./...)
+(cd go && go test $pkgs)
 
 echo "== go vet =="
-(cd go && go vet ./...)
+(cd go && go vet $pkgs)
 
 echo "== runtime patches =="
 "$here/check-runtime.sh"
