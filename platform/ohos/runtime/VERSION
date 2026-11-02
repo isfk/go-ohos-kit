@@ -1,0 +1,4 @@
+# The Go release these files were taken from. `scripts/check.sh` warns when
+# the installed Go has moved on: re-read the three files, re-apply the patch
+# (each says what it does at the top), and bump this.
+go1.27.3

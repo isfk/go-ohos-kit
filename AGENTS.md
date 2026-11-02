@@ -1,0 +1,109 @@
+# AGENTS.md
+
+给在这个仓库里干活的 agent（也给我自己）。README 讲「是什么、为什么」，这里只讲
+**动手时要知道的事**。
+
+## 心智模型
+
+三层，边界别糊：
+
+```text
+ArkTS / ArkUI   ← 界面、权限、平台 Kit、生命周期都在这一层
+    │  import 'libgocore.so'
+NAPI 桥         ← go/napi_linux.c：只搬运，不含业务
+    │  cgo
+Go 内核         ← go/core：状态、逻辑、IO；goroutine 随便开
+```
+
+## 三条铁律
+
+1. **`go/core/` 必须保持纯 Go**：不 cgo、不 import 任何 HarmonyOS 相关的包、不认识
+   `filesDir`。它要能在 Mac 上 `go test ./core/` 跑通——这是唯一不用设备就能验证的那部分。
+   路径、平台句柄一律从 ArkTS 传进来（参数或 `io.Reader`/`fd`）。
+2. **业务逻辑进 `core`**。`go/main_linux.go` 只做搬运（解参数 → 调 core → 序列化），
+   `go/napi_linux.c` 只做桥（NAPI ↔ cgo）。往这两个文件里塞业务，就是在把可测的东西变不可测。
+3. **不要动 `platform/ohos/runtime/` 里的三个补丁**，除非在升级 Go。那时按
+   `scripts/check-runtime.sh` 的提示做，并保证 `scripts/check.sh` 里的硬断言还成立：
+   **产物的 `TLS_TPREL64` 重定位计数必须为 0**。
+
+## 命令
+
+| 想做什么 | 命令 | 要设备？ |
+|---|---|---|
+| Go 逻辑 | `cd go && go test ./core/` | 不要 |
+| 全套自检 | `scripts/check.sh` | 不要 |
+| 无 SDK 机器 | `scripts/check.sh --no-build` | 不要 |
+| 只编 `.so` | `platform/ohos/build.sh go -project app` | 不要 |
+| 编 + 装 + 跑 | `platform/ohos/run.sh` | **要** |
+| 内核日志 | `hdc shell hilog -T gokit` | 要 |
+| 崩溃地址还原 | `hdc shell hilog -x` 筛 `FAULT` → `llvm-symbolizer --obj=libgocore.so 0x<偏移>` | 要 |
+
+`hdc` 在 `$DEVECO_SDK_HOME/default/openharmony/toolchains/hdc`（默认
+`~/command-line-tools/sdk`）。
+
+## 改完怎么验：不许「应该没问题」
+
+按改动面选证据，**每条都要有实物**：
+
+| 改了什么 | 拿什么结账 |
+|---|---|
+| `go/core` | `go test ./core/` 输出（新逻辑必须有新用例） |
+| 桥 / 新 `//export` | `scripts/check.sh`（内含交叉编译）+ 真机调用一次 |
+| ArkTS / UI | `platform/ohos/run.sh` + 真机截图；`hilog` 佐证 |
+| runtime 补丁 | `scripts/check.sh` 的 TLS 断言 + 真机启动 |
+
+- **截图是证据，但要看清**：`hdc shell snapshot_display -f /data/local/tmp/x.jpeg` +
+  `hdc file recv`。别凭想象描述画面。
+- **别用自动化工具替用户验手势**：`uitest uiInput drag/swipe` 对拖拽/捏合测不准；
+  需要真手指的地方，把步骤写清楚请人来点。
+- **判断错了要改口**：先复现、再归因，别把「我看到的现象」直接当「原因」。黑屏可能是
+  摄像头对着暗处，压扁才是布局问题——两者混在一起会连着修错两个地方。
+
+## 加一个能力：三处，一分钟
+
+1. `go/core/` 写逻辑 + 测试；
+2. `go/main_linux.go` 加一个 `//export` 函数，`go/napi_linux.c` 里注册
+   `napi_property_descriptor`（返回 JSON 字符串，或走 TSFN 推事件）；
+3. `app/entry/src/main/cpp/types/libgocore/index.d.ts` 加类型，
+   `app/entry/src/main/ets/GoCore.ts` 包一层带类型的函数。
+
+平台侧能力（权限、Kit、surface）留在 ArkTS，不要试图在 Go 里模拟。
+
+## 陷阱清单
+
+细节在 README「接平台能力」和「排错手册」两节，这里只列最容易再踩的：
+
+- `session.start()` 在本项目的相机 API 版本里**不是 Promise**，`.then` 会静默炸。
+- `XComponent` 高度 0 = 没有 surface；别在 `Stack` 里随状态增删兄弟节点（会重建 surface）。
+- `user_grant` 权限（相机/定位）必须写 `reason` + `usedScene`，`system_grant`（传感器）不用。
+- 预览面板要用 `.aspectRatio(...)`，固定高度会把画面压扁。
+- `aboutToDisappear` 抓不到 Home 键，后台处理要接 ability 的 `onBackground`（`AppStorage`）。
+- 鸿蒙里环境变量是空的（空 argv/envp 补丁），沙箱路径必须从 ArkTS 传进 Go。
+- 大块数据别用 JSON，用 `ArrayBuffer` + 按需解码（2000 行这个量级 JSON 完全够用，别优化错方向）。
+
+## 已被证伪的说法（别再写回文档）
+
+- ~~「JSON 在大数据上一定慢」~~：2000 行 JSON 2.8ms，二进制 2.9ms。二进制赢在**体积**和
+  **按需解码**，不在速度快。
+- ~~「桥的拷贝是瓶颈」~~：120KB 过桥 0.3ms。
+- ~~「预览用最大 profile 最好」~~：2688×1216 铺到小面板纯属浪费。
+
+## 别提交、别碰
+
+- `app/build-profile.json5`：**已 gitignore**，里面是本机证书路径 + 密码占位、还绑着包名。
+  入库的是 `app/build-profile.example.json5`（`signingConfigs: []`）。改模板可以，改真文件不许入库。
+- `libgocore.so` / `*.h`、`.cache/`、`oh_modules/`、`build/`、`.hvigor/`：都在 `.gitignore` 里。
+- 删文件、改包名、卸载设备上的 App：先问人。
+
+## 假警报（别浪费时间）
+
+- **gopls 对 `go/main_linux.go` 报一堆 `undefined: C.xxx`**：gopls 没有 cgo/linux 环境，
+  那是被 build tag 排除的 cgo 文件的孤儿分析。以交叉编译为准。
+- **clangd / semgrep 对 `go/napi_linux.c` 报缺失头文件**：那文件用 `__has_include` 守卫，
+  NDK 头只在 hvigor 交叉编译时存在于搜索路径。以 `scripts/check.sh` 的交叉编译为准。
+
+## 约定
+
+- **语言**：代码注释和 commit message 用英文；README / AGENTS.md / 文档用中文。
+- **注释写「为什么」**：这类桥接代码最容易变成「注释复述代码」，别那样。
+- **`go vet` 必须干净**，`gofmt` 必须跑（`scripts/check.sh` 会查前者）。

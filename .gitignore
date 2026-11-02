@@ -1,0 +1,28 @@
+# Builds
+libgocore.so
+libgocore.h
+apps/*/libgocore.*
+app/entry/libs/
+app/entry/build/
+app/.hvigor/
+app/entry/.cxx/
+app/entry/oh_modules/
+app/oh_modules/
+apps/*/app/entry/libs/
+apps/*/app/entry/build/
+apps/*/app/.hvigor/
+apps/*/app/oh_modules/
+
+# Per-machine, per-bundle signing material. The tracked template is
+# app/build-profile.example.json5; this is what DevEco fills in.
+app/build-profile.json5
+
+# Per-machine editor tooling: the SDK's paths are in here.
+.clangd
+.cache/
+compile_commands.json
+local.properties
+.idea/
+
+# macOS
+.DS_Store

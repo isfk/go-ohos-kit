@@ -1,0 +1,24 @@
+# What can be checked without a phone: the logic's tests and the patches that
+# let Go live in a HarmonyOS app. The cross build needs the HarmonyOS NDK,
+# which a plain runner doesn't have, so it's skipped there (check.sh says so).
+name: check
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go/go.mod
+          cache: false
+      - name: tests, vet, runtime patches
+        run: scripts/check.sh --no-build
