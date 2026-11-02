@@ -15,7 +15,7 @@ NAPI 桥         ← go/napi_linux.c：只搬运，不含业务
 Go 内核         ← go/core：状态、逻辑、IO；goroutine 随便开
 ```
 
-## 四条铁律
+## 五条铁律
 
 1. **`go/core/` 必须保持纯 Go**：不 cgo、不 import 任何 HarmonyOS 相关的包、不认识
    `filesDir`。它要能在 Mac 上 `go test ./core/` 跑通——这是唯一不用设备就能验证的那部分。
@@ -25,7 +25,10 @@ Go 内核         ← go/core：状态、逻辑、IO；goroutine 随便开
    照片——相机默认存 HEIF。
 3. **业务逻辑进 `core`**。`go/main_linux.go` 只做搬运（解参数 → 调 core → 序列化），
    `go/napi_linux.c` 只做桥（NAPI ↔ cgo）。往这两个文件里塞业务，就是在把可测的东西变不可测。
-4. **不要动 `platform/ohos/runtime/` 里的三个补丁**，除非在升级 Go。那时按
+4. **ArkTS 只用状态管理 V2**：`@ComponentV2` + `@Local` / `@Param` / `@Event` / `@Monitor`；
+   跨组件共享用 `@ObservedV2` + `@Trace` + `AppStorageV2`（见 `app/entry/src/main/ets/AppState.ets`）。
+   V1 的 `@State` / `@Prop` / `@Link` / `@Watch` / `@StorageLink` **不能和 V2 混用**，一个也别加。
+5. **不要动 `platform/ohos/runtime/` 里的三个补丁**，除非在升级 Go。那时按
    `scripts/check-runtime.sh` 的提示做，并保证 `scripts/check.sh` 里的硬断言还成立：
    **产物的 `TLS_TPREL64` 重定位计数必须为 0**。
 

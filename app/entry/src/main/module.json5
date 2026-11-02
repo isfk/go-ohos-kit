@@ -17,6 +17,24 @@
         "name": "ohos.permission.ACCELEROMETER"
       },
       {
+        // Location, coarse and precise: the two must be asked for together —
+        // asking for LOCATION alone is refused.
+        "name": "ohos.permission.APPROXIMATELY_LOCATION",
+        "reason": "$string:location_reason",
+        "usedScene": {
+          "abilities": ["EntryAbility"],
+          "when": "inuse"
+        }
+      },
+      {
+        "name": "ohos.permission.LOCATION",
+        "reason": "$string:location_reason",
+        "usedScene": {
+          "abilities": ["EntryAbility"],
+          "when": "inuse"
+        }
+      },
+      {
         // The camera: a runtime one, asked for the first time it's used
         // (requestPermissionsFromUser, in CameraCard.ets). A user_grant
         // permission must say why and where — the installer rejects it

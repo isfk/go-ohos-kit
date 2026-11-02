@@ -18,12 +18,18 @@ import "C"
 import (
 	"encoding/json"
 	"os"
+	"time"
 	"unsafe"
 
 	"gokit/core"
 )
 
-var store = core.New()
+var (
+	store = core.New()
+	// track is the location session the UI is currently running. Fixes arrive
+	// on the JS thread; Track guards itself anyway.
+	track core.Track
+)
 
 func init() {
 	// Every event the core makes goes to the UI through the bridge.
@@ -105,6 +111,28 @@ func gokit_analyze_pixels(data unsafe.Pointer, length C.size_t, width, height, s
 	}
 	return C.CString(string(out))
 }
+
+// gokit_location feeds the core one location fix and answers with the track so
+// far: how far it has gone, in which direction, how fast. The platform's
+// location Kit did the hard part (fixes); this is the arithmetic.
+//
+//export gokit_location
+func gokit_location(lat, lon, accuracy C.double) *C.char {
+	point := track.Fix(core.GeoFix{
+		Lat: float64(lat), Lon: float64(lon), Accuracy: float64(accuracy),
+	}, time.Now())
+	out, err := json.Marshal(struct {
+		OK    bool          `json:"ok"`
+		Point core.GeoPoint `json:"point"`
+	}{true, point})
+	if err != nil {
+		return errorJSON(err.Error())
+	}
+	return C.CString(string(out))
+}
+
+//export gokit_location_reset
+func gokit_location_reset() { track.Reset() }
 
 //export gokit_rows_count
 func gokit_rows_count() C.int { return C.int(store.RowCount()) }

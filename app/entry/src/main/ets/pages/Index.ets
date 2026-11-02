@@ -3,22 +3,23 @@
 
 import { sensor } from '@kit.SensorServiceKit';
 import { CameraCard } from '../CameraCard';
+import { LocationCard } from '../LocationCard';
 import { PhotoCard } from '../PhotoCard';
 import { gocore, Event, LevelReading, Row, Todo } from '../GoCore';
 
 @Entry
-@Component
+@ComponentV2
 struct Index {
-  @State todos: Todo[] = [];
-  @State draft: string = '';
-  @State remaining: number = 0;
+  @Local todos: Todo[] = [];
+  @Local draft: string = '';
+  @Local remaining: number = 0;
   /** The core's goroutine pushing a line a second: the bridge, both ways. */
-  @State heartbeat: string = '';
+  @Local heartbeat: string = '';
   /** The compact wire against JSON, measured on this phone. */
-  @State bench: string = '';
+  @Local bench: string = '';
   /** The accelerometer, smoothed and turned into degrees by the core. */
-  @State level: LevelReading | undefined = undefined;
-  @State sensorError: string = '';
+  @Local level: LevelReading | undefined = undefined;
+  @Local sensorError: string = '';
 
   aboutToAppear(): void {
     gocore.listen((e: Event) => {
@@ -168,6 +169,10 @@ struct Index {
 
       // A photo the platform takes and decodes, and the core measures.
       PhotoCard()
+
+      // A platform stream with a subscription: where you are, and how far
+      // you've walked since the first fix.
+      LocationCard()
 
       // A platform callback at 50 Hz, into Go, and back out smoothed.
       Row({ space: 12 }) {

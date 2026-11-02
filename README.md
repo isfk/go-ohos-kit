@@ -11,6 +11,9 @@ ArkTS / ArkUI  ──import 'libgocore.so'──▶  NAPI 桥  ──▶  Go 内
 
 它不是 UI 框架——**没有**自己的布局引擎、组件树、渲染器。ArkUI 是唯一的 UI。
 
+界面用**状态管理 V2**（`@ComponentV2` + `@Local` / `@Monitor`，跨组件共享用
+`@ObservedV2` + `@Trace` + `AppStorageV2`）。V1 的 `@State` / `@StorageLink` 一个没留。
+
 | | 数字 |
 |---|---|
 | 桥 | 519 行（`go/main_linux.go` 172 + `go/napi_linux.c` 347），14 个 `//export` |
@@ -107,6 +110,7 @@ scripts/
 app/                        HarmonyOS 工程（DevEco 结构）
   build-profile.example.json5  tracked 模板（不签名）；build-profile.json5 是本机的、被忽略
   entry/src/main/ets/
+    AppState.ets            应用级状态：@ObservedV2 + @Trace，经 AppStorageV2 共享
     GoCore.ts               类型化的内核封装（唯一知道 JSON 的地方）
     CameraCard.ets          相机：权限 + surface + 生命周期
     PhotoCard.ets           拍照/选图 → 平台解码 → Go 量像素
@@ -234,8 +238,9 @@ session.commitConfig(); session.start();
 - **别用固定高度装预览**：1280×720 塞进 200px 高的框 = 画面压扁。用
   `.aspectRatio(profile.size.width / profile.size.height)`。
 - **`aboutToDisappear` 抓不到 Home 键**（页面还活着，只是看不见）。真正的时机是 ability 的
-  `onBackground`：`AppStorage.setOrCreate('appForeground', false)`，组件用
-  `@StorageLink(...) @Watch(...)` 接住。相机在后台开着是实打实的 bug（耗电 + 占设备）。
+  `onBackground`：它把 `appLife().foreground = false` 写进那个 `@ObservedV2` 对象，组件用
+  `@Local life` + `@Monitor('life.foreground')` 接住（V2 的深层路径监听）。相机在后台开着是
+  实打实的 bug（耗电 + 占设备）。
 - **预览 profile 别贪大**：这台机器最大档是 2688×1216，铺到小面板里纯属浪费，≤1280 取最大即可。
 
 ### 四、真像素：平台解码，Go 做数学

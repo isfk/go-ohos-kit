@@ -38,6 +38,12 @@ export function remaining(): number;
 /** What a file the system opened is: `{ok, file}` or `{ok:false, error}`. */
 export function inspect(fd: number, name: string): string;
 
+/** One location fix in; the track so far out: `{ok, point}` or `{ok:false, error}`. */
+export function location(lat: number, lon: number, accuracy: number): string;
+
+/** Forgets the track (the UI stopped listening). */
+export function locationReset(): void;
+
 /**
  * What a decoded picture looks like: `{ok, image}` or `{ok:false, error}`.
  * pixels is RGBA_8888, width×height, row stride in bytes (0 = packed).

@@ -35,6 +35,8 @@ extern char *gokit_inspect(int32_t fd, char *name);
 extern void gokit_lifecycle(int32_t foreground);
 extern void gokit_accel(double x, double y, double z);
 extern char *gokit_analyze_pixels(void *data, size_t length, int32_t width, int32_t height, int32_t stride);
+extern char *gokit_location(double lat, double lon, double accuracy);
+extern void gokit_location_reset(void);
 extern int32_t gokit_rows_count(void);
 extern uint8_t *gokit_rows(int32_t offset, int32_t limit, size_t *length);
 extern char *gokit_rows_json(int32_t offset, int32_t limit);
@@ -251,6 +253,30 @@ static napi_value Analyze(napi_env env, napi_callback_info info) {
     return out;
 }
 
+// location(lat, lon, accuracy): one fix in, the track so far out, as JSON.
+static napi_value Location(napi_env env, napi_callback_info info) {
+    size_t argc = 3;
+    napi_value argv[3];
+    double lat = 0, lon = 0, accuracy = 0;
+    if (napi_get_cb_info(env, info, &argc, argv, NULL, NULL) != napi_ok || argc < 2) {
+        napi_throw_type_error(env, NULL, "location(lat, lon, accuracy)");
+        return NULL;
+    }
+    if (napi_get_value_double(env, argv[0], &lat) != napi_ok) return NULL;
+    if (napi_get_value_double(env, argv[1], &lon) != napi_ok) return NULL;
+    if (argc > 2) napi_get_value_double(env, argv[2], &accuracy);
+    char *json = gokit_location(lat, lon, accuracy);
+    napi_value out = NULL;
+    if (json) out = toJS(env, json);
+    return out;
+}
+
+static napi_value LocationReset(napi_env env, napi_callback_info info) {
+    (void)info;
+    gokit_location_reset();
+    return NULL;
+}
+
 // lifecycle(foreground): 1 on screen, 0 in the background.
 static napi_value Lifecycle(napi_env env, napi_callback_info info) {
     size_t argc = 1;
@@ -327,6 +353,8 @@ static napi_value Init(napi_env env, napi_value exports) {
         {"rows", NULL, Rows, NULL, NULL, NULL, napi_default, NULL},
         {"rowsJson", NULL, RowsJSON, NULL, NULL, NULL, napi_default, NULL},
         {"accel", NULL, Accel, NULL, NULL, NULL, napi_default, NULL},
+        {"location", NULL, Location, NULL, NULL, NULL, napi_default, NULL},
+        {"locationReset", NULL, LocationReset, NULL, NULL, NULL, napi_default, NULL},
     };
     napi_define_properties(env, exports, sizeof desc / sizeof desc[0], desc);
     return exports;

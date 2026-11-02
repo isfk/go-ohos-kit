@@ -1,15 +1,16 @@
 import { AbilityConstant, ConfigurationConstant, UIAbility, Want } from '@kit.AbilityKit';
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { window } from '@kit.ArkUI';
+import { appLife } from '../AppState';
 
 const DOMAIN = 0x0000;
 
 export default class EntryAbility extends UIAbility {
   onCreate(want: Want, launchParam: AbilityConstant.LaunchParam): void {
     hilog.info(DOMAIN, 'testTag', '%{public}s', 'Ability onCreate');
-    // Foreground/background is an ability-level fact; the components that hold
-    // something expensive (a camera, a sensor) watch it through AppStorage.
-    AppStorage.setOrCreate('appForeground', true);
+    // Foreground/background is an ability-level fact; components that hold
+    // something expensive (a camera, a sensor) watch the same AppLife object.
+    appLife().foreground = true;
   }
 
   onDestroy(): void {
@@ -43,7 +44,7 @@ export default class EntryAbility extends UIAbility {
   onForeground(): void {
     // Ability has brought to foreground
     hilog.info(DOMAIN, 'testTag', '%{public}s', 'Ability onForeground');
-    AppStorage.setOrCreate('appForeground', true);
+    appLife().foreground = true;
   }
 
   onBackground(): void {
@@ -51,6 +52,6 @@ export default class EntryAbility extends UIAbility {
     hilog.info(DOMAIN, 'testTag', '%{public}s', 'Ability onBackground');
     // Not onPageHide — a page that goes behind another still exists, and a
     // camera left previewing in the background is exactly the bug.
-    AppStorage.setOrCreate('appForeground', false);
+    appLife().foreground = false;
   }
 }

@@ -9,30 +9,38 @@
 import { camera } from '@kit.CameraKit';
 import { abilityAccessCtrl, common, Permissions } from '@kit.AbilityKit';
 import { BusinessError } from '@kit.BasicServicesKit';
+import { AppLife, appLife } from './AppState';
 
-@Component
+@ComponentV2
 export struct CameraCard {
-  @State private status: string = 'camera off';
-  @State private running: boolean = false;
+  @Local private status: string = 'camera off';
+  @Local private running: boolean = false;
   private controller: XComponentController = new XComponentController();
   private session: camera.PhotoSession | undefined = undefined;
   private surfaceId: string = '';
   private wanted: boolean = false;
   /** The preview's own aspect: a fixed height would squash the frames. */
-  @State private aspect: number = 4 / 3;
+  @Local private aspect: number = 4 / 3;
 
   // The page says when it's gone, and the ability says when the app goes to
   // the background: a camera left open holds the device and eats the battery,
   // so neither is optional. (aboutToDisappear alone misses the home button —
   // the page is still alive, just invisible.)
-  @StorageLink('appForeground') @Watch('onForegroundChanged') private foreground: boolean = true;
+  @Local private life: AppLife = appLife();
+
+  @Monitor('life.foreground')
+  onForegroundChanged(): void {
+    if (!this.life.foreground) {
+      this.onBackgrounded();
+    }
+  }
 
   aboutToDisappear(): void {
     this.stop();
   }
 
-  private onForegroundChanged(): void {
-    if (!this.foreground && this.session !== undefined) {
+  private onBackgrounded(): void {
+    if (this.session !== undefined) {
       this.stop();
       this.status = 'camera off (backgrounded)';
     }

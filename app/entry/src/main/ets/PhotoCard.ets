@@ -16,12 +16,12 @@ import { AnalyzeResult, FileInfo, gocore, ImageAnalysis } from './GoCore';
 /** Photos are decoded to this on the wide side: 12 MP would only cost time. */
 const ANALYSIS_WIDTH = 320;
 
-@Component
+@ComponentV2
 export struct PhotoCard {
-  @State private file: FileInfo | undefined = undefined;
-  @State private analysis: ImageAnalysis | undefined = undefined;
-  @State private status: string = 'no photo yet';
-  @State private busy: boolean = false;
+  @Local private file: FileInfo | undefined = undefined;
+  @Local private analysis: ImageAnalysis | undefined = undefined;
+  @Local private status: string = 'no photo yet';
+  @Local private busy: boolean = false;
 
   private async fromGallery(): Promise<void> {
     try {

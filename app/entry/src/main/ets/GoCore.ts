@@ -44,6 +44,28 @@ export interface InspectResult {
   error?: string;
 }
 
+/** The track after a fix (core.GeoPoint). */
+export interface GeoPoint {
+  lat: number;
+  lon: number;
+  accuracy: number;
+  fixes: number;
+  /** Metres travelled since the first fix. */
+  moved: number;
+  /** Degrees from the first fix, 0 = north. */
+  bearing: number;
+  /** Metres per second, smoothed. */
+  speed: number;
+  seconds: number;
+}
+
+/** A location fix's answer: the track, or why not. */
+export interface GeoResult {
+  ok: boolean;
+  point?: GeoPoint;
+  error?: string;
+}
+
 /** One of the colours that make up a picture (core.ColorShare). */
 export interface ColorShare {
   hex: string;
@@ -131,6 +153,24 @@ export class GoCore {
 
   remaining(): number {
     return core.remaining();
+  }
+
+  /**
+   * Feeds the core one location fix; it answers with the track so far. The
+   * platform's location Kit measured where we are — distance, bearing and
+   * speed are the core's arithmetic.
+   */
+  location(lat: number, lon: number, accuracy: number): GeoResult {
+    try {
+      return JSON.parse(core.location(lat, lon, accuracy)) as GeoResult;
+    } catch (err) {
+      return { ok: false, error: `${err}` };
+    }
+  }
+
+  /** Forgets the track: a new session starts from zero. */
+  locationReset(): void {
+    core.locationReset();
   }
 
   /**
