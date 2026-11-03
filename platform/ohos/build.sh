@@ -65,14 +65,10 @@ goroot=$(go env GOROOT)
 
 work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT INT TERM
-cat >"$work/overlay.json" <<JSON
-{"Replace": {
-  "$goroot/src/runtime/tls_arm64.s": "$here/runtime/tls_arm64.s",
-  "$goroot/src/runtime/rt0_linux_arm64.s": "$here/runtime/rt0_linux_arm64.s",
-  "$goroot/src/runtime/os_linux.go": "$here/runtime/os_linux.go",
-  "$goroot/src/runtime/gokit_ohos.go": "$here/runtime/gokit_ohos.go"
-}}
-JSON
+# The overlay comes from tools/patch, so the list of patched files lives in one
+# place (and `tools/patch check` can tell when they stop fitting this Go).
+root=$(cd "$here/../.." && pwd)
+(cd "$root/tools/patch" && go run . overlay -root "$root" -o "$work/overlay.json")
 
 echo "gokit: building $go_dir for $abi" >&2
 (cd "$go_dir" && CGO_ENABLED=1 GOOS=linux GOARCH="$goarch" \

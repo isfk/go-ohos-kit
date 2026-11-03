@@ -32,6 +32,15 @@ Go 内核         ← go/core：状态、逻辑、IO；goroutine 随便开
    `scripts/check-runtime.sh` 的提示做，并保证 `scripts/check.sh` 里的硬断言还成立：
    **产物的 `TLS_TPREL64` 重定位计数必须为 0**。
 
+   改补丁之后必须跑 `cd tools/patch && go run . check`：它盯「上游锚点还在不在」，
+   这才是升级 Go 时真正会坏的东西（编译不会有任何意见）。补丁清单只在
+   `tools/patch/patches.go` 一处，`build.sh` 的 overlay 由工具生成，别再手抄。
+
+   已决定**不往 Go 上游提这三个补丁**（2026-11 讨论）：它们碰的是
+   `-buildmode=c-shared` + musl 的坑，而 OpenHarmony 不是 Go 的 GOOS；要能提，唯一
+   卖点是把复现搬成「Alpine 上 dlopen Go 库」，成本高、`os_linux.go` 那 34 行还要证明
+   对所有 linux 构建无副作用。结论：本地用 `-overlay` 维护，够了。别再重复论证这件事。
+
 ## 命令
 
 | 想做什么 | 命令 | 要设备？ |

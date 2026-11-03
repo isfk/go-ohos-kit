@@ -78,6 +78,7 @@ cp app/build-profile.example.json5 app/build-profile.json5   # 或者直接跑 r
 | 编 + 装 + 跑 + 抓日志 | `platform/ohos/run.sh` | **要** |
 | 新起一个工程 | `platform/ohos/new.sh myapp [--bundle com.x.y]` | 不要 |
 | Go 升级后先跑这个 | `scripts/check-runtime.sh` | 不要 |
+| 检查补丁还配不配这个 Go | `cd tools/patch && go run . check` | 不要 || 拿补丁的 overlay 给别的工程用 | `cd tools/patch && go run . overlay -o ov.json` | 不要 || 验一个 `.so` 能不能被 musl 加载 | `cd tools/patch && go run . verify libgocore.so` | 不要 |
 
 ## 目录
 
@@ -105,7 +106,11 @@ platform/ohos/
 
 scripts/
   check.sh                  一套命令跑完：test / vet / 补丁 / 交叉编译 / TLS 断言
-  check-runtime.sh          只查三个补丁（Go 升级后跑）
+  check-runtime.sh          只查三个补丁（Go 升级后跑）＝ tools/patch check 的壳
+
+tools/patch/                Go 写的小工具，看着这三个补丁（自带 module + 测试）
+  main.go                  check / overlay / verify 三个子命令
+  patches.go               补丁表：替换谁、为什么、标记、要盯的上游锚点
 
 app/                        HarmonyOS 工程（DevEco 结构）
   build-profile.example.json5  tracked 模板（不签名）；build-profile.json5 是本机的、被忽略
@@ -385,9 +390,25 @@ Go**。进程活着 = Go 活着；进程被冻结 = Go 一起停。别指望一�
 | `fatal error: failed to get system page size` → 进程 exit(2) | musl 调库构造函数**不传 argc/argv**，Go 把寄存器垃圾当 argv/envp/auxv | `runtime/rt0_linux_arm64.s`：库模式给一个空的 argv/envp |
 | 同上（auxv 读不到时的兜底） | app 沙箱里 `/proc/self/auxv` 读不出来 | `runtime/os_linux.go`：`physPageSize==0` 时用 `mincore` 探针 |
 
-`build.sh` 用 `go build -overlay` 把它们换掉，**不动你机器上的 Go**。
-`check.sh` 里有条硬断言：**产物的 `TLS_TPREL64` 重定位计数必须为 0**——一旦哪天 Go 换了
-TLS 模型，这条会先炸，比在手机上加载失败好查得多。
+`build.sh` 用 `go build -overlay` 把它们换掉，**不动你机器上的 Go**。overlay 的清单和
+这些检查都由 `tools/patch` 一处给出（`build.sh` 调它生成 overlay，不再自己抄一份文件名）。
+
+它盯三件事，都是「升级 Go 之后会静默坏掉」的那种：
+
+| 命令 | 盯什么 | 坏了会怎样（不检查的话） |
+|---|---|---|
+| `check` | 补丁的标记还在、**上游锚点**还在（`sysargs`、`load_g`、`_rt0_arm64_linux`） | 编译照过，运行时崩，手机上只剩白屏 |
+| `verify` | 产物里 **没有任何 initial-exec TLS 重定位**、该链的库链了 | musl 拒绝加载，ArkTS 报 `does not provide an export name 'start'` |
+| `overlay` | 把这份清单交给任何工程用（`go build -overlay`） | 各抄一份，慢慢漂移 |
+
+```sh
+cd tools/patch && go run . check                    # 4 patches are in place and still fit go1.27.3
+cd tools/patch && go run . verify libgocore.so      # clean (4.2 MB, links …, no initial-exec TLS)
+```
+
+两条失败路径都实测过：把上游 `sysargs` 改名 → `check` 报
+`os_linux.go no longer contains "func sysargs(argc int32, argv **byte) {"`，退出码 1；
+`verify -expect libbogus.so` → `would not load`。
 
 **升级 Go 时**：`runtime/*.s`、`runtime/os_linux.go` 跟着 Go 版本走（当前取自重
 go1.27.3），升级后跑 `scripts/check-runtime.sh`，再跑一遍 `platform/ohos/run.sh` 看

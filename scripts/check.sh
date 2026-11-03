@@ -20,9 +20,11 @@ pkgs=./core/...
 
 echo "== go test =="
 (cd go && go test $pkgs)
+(cd tools/patch && go test ./...)
 
 echo "== go vet =="
 (cd go && go vet $pkgs)
+(cd tools/patch && go vet ./...)
 
 echo "== runtime patches =="
 "$here/check-runtime.sh"
@@ -42,18 +44,8 @@ echo "== cross build =="
 out=$(mktemp -d)/libgocore.so
 trap 'rm -rf "$(dirname "$out")"' EXIT INT TERM
 "platform/ohos/build.sh" go -o "$out" >/dev/null
-readelf=$sdk/default/openharmony/native/llvm/bin/llvm-readelf
 
-# The regression this whole kit is about: a Go library with initial-exec TLS
-# is refused by musl, and the app dies at load with a confusing JS error.
-if [ "$("$readelf" -rW "$out" | grep -c TLS_TPREL64 || true)" != 0 ]; then
-	echo "check: libgocore.so has initial-exec TLS relocations: musl will refuse it" >&2
-	exit 1
-fi
-for lib in libace_napi.z.so libhilog_ndk.z.so libc.so; do
-	if ! "$readelf" -d "$out" | grep -q "$lib"; then
-		echo "check: libgocore.so doesn't link $lib" >&2
-		exit 1
-	fi
-done
-echo "check: libgocore.so is clean ($(du -h "$out" | cut -f1 | tr -d ' '), no initial-exec TLS)"
+# The regression this whole kit is about: a Go library with initial-exec TLS is
+# refused by musl, and the app dies at load with a confusing JS error. The check
+# itself lives in tools/patch (verify), next to the patches it protects.
+(cd tools/patch && DEVECO_SDK_HOME="$sdk" go run . verify "$out")
