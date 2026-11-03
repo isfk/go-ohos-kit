@@ -20,6 +20,7 @@ Go 内核         ← go/core：状态、逻辑、IO；goroutine 随便开
 1. **`go/core/` 必须保持纯 Go**：不 cgo、不 import 任何 HarmonyOS 相关的包、不认识
    `filesDir`。它要能在 Mac 上 `go test ./core/` 跑通——这是唯一不用设备就能验证的那部分。
    路径、平台句柄一律从 ArkTS 传进来（参数或 `io.Reader`/`fd`）。
+   `go/store/` 同理（SQLite 选 `modernc.org/sqlite` 就是为了这条）：文件路径也从 ArkTS 来。
 2. **平台的东西留在平台侧**：解码（HEIF/JPEG 都归系统解码器）、权限、surface、Kit 全在
    ArkTS；Go 只收已经规整的数据（RGBA 字节、fd、JSON）。别在 Go 里塞 `image/jpeg` 去解相机
    照片——相机默认存 HEIF。
@@ -46,6 +47,9 @@ Go 内核         ← go/core：状态、逻辑、IO；goroutine 随便开
 | 想做什么 | 命令 | 要设备？ |
 |---|---|---|
 | Go 逻辑 | `cd go && go test ./core/` | 不要 |
+| 数据库逻辑 | `cd go && go test ./store/` | 不要 |
+| 驱动对比（2 个驱动） | `cd go/bench/sqlite && CGO_ENABLED=1 go test -bench . -benchtime 5x` | 不要 |
+| 像素数学基准 | `cd go && go test ./core/ -bench Analyze -benchmem` | 不要 |
 | 全套自检 | `scripts/check.sh` | 不要 |
 | 无 SDK 机器 | `scripts/check.sh --no-build` | 不要 |
 | 只编 `.so` | `platform/ohos/build.sh go -project app` | 不要 |
@@ -102,12 +106,28 @@ Go 内核         ← go/core：状态、逻辑、IO；goroutine 随便开
   它会留一条常驻通知，这是规矩不是 bug。
 - **传感器/定位的数字要按精度过滤**：噪声累加会给出「静止走了 234 m」这种假结论。
 - **`background` 是 ArkUI 组件内置属性名**，取同名 `@Local` 直接编译失败。
+- **`.zshrc` 里的 `CGO_ENABLED=0`**：cgo 驱动（mattn）会变成一个 stub，第一次查询才报
+  「requires cgo」。跑 `go/bench/sqlite` 得显式 `CGO_ENABLED=1`；`build.sh` 自己会设，不用管。
+- **热循环里别用 map**：`AnalyzePixels` 每像素一次 map 查找，贵了 2.3×。key 空间就 4096 个，
+  上平数组。反过来，**为了拿前三名去 `sort` 四千个桶**也会把钱花回去——三槽插入就够。
+- **一个 `.db` 文件只有一个写者**：core 的 `filesDir/gokit.db` 和平台 `relationalStore`
+  各自拥有自己的文件。两个句柄写同一个文件 = `SQLITE_BUSY`，而且只在最不方便的时候出现。
+- **JSON 过桥会把数据库赢的优势吃掉**：读一页 2000 行，库本身 4.6–8.7ms，加上 JSON 过桥
+  变 6.3–10.4ms。要赢就换二进制线格式。
 
 ## 已被证伪的说法（别再写回文档）
 
 - ~~「JSON 在大数据上一定慢」~~：2000 行 JSON 2.8ms，二进制 2.9ms。二进制赢在**体积**和
   **按需解码**，不在速度快。
-- ~~「桥的拷贝是瓶颈」~~：120KB 过桥 0.3ms。
+- ~~「桥的拷贝是瓶颈」~~：120KB 过桥 0.3ms；一次空往返（int 回来）**0.28µs**。
+- ~~「Go 内核比 ArkTS 快」~~：没有一项数字支持。桥很便宜（所以「接进来变慢」不成立），
+  但也没有「换语言变快」：像素数学那 1.9ms 是 `map` + `sort` 的错，换数组 + 三槽选优后
+  0.47ms——快的是数据结构，不是语言。
+- ~~「数据库查询必须异步化」~~：点查 3–8µs + 过桥 1.5µs ≈ 一个 16ms 帧的 0.05%。同步查没事。
+  该异步的是全表扫（2 万行 ≈ 14ms）和聚合。
+- ~~「纯 Go 的 sqlite 驱动读页面慢一倍」~~：2000 行页面 636–679µs vs cgo 653–658µs，打平;
+  纯 Go 只在计算密集型查询上慢（聚合 2.8×）。
+- ~~「12 MP 全量算像素要 300 ms」~~：那是旧代码。有 `maxSamples` 之后 10 MP 约 1.7ms（Mac）。
 - ~~「预览用最大 profile 最好」~~：2688×1216 铺到小面板纯属浪费。
 
 ## 别提交、别碰

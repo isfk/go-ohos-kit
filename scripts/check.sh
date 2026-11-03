@@ -16,7 +16,11 @@ build=1
 # cross compiler, in the build step below. So the host-side checks name the pure
 # Go packages instead of ./... — which would fail on any Linux box without the
 # NDK (a Mac hides it, because every bridge file is *_linux.c).
-pkgs=./core/...
+#
+# store/ is in this list on purpose: modernc.org/sqlite is pure Go, so the
+# database layer is testable here too — which is most of the reason it was
+# picked over the cgo driver (see go/bench/sqlite for the numbers).
+pkgs="./core/... ./store/..."
 
 echo "== go test =="
 (cd go && go test $pkgs)

@@ -81,6 +81,38 @@ func TestAnalyzeNamesTheColors(t *testing.T) {
 	}
 }
 
+func TestAnalyzeMergesColoursInTheSameBucket(t *testing.T) {
+	// The bucket key keeps the top 4 bits of each channel, so two reds that
+	// differ only below that are the same colour to this analysis — and the
+	// average the UI shows has to be the average of both, not one of them.
+	a, err := AnalyzePixels(halves(8, 4, 0, [3]uint8{255, 0, 0}, [3]uint8{240, 0, 0}), 8, 4, 0)
+	if err != nil {
+		t.Fatalf("AnalyzePixels: %v", err)
+	}
+	if len(a.Colors) != 1 {
+		t.Fatalf("Colors = %v, want the two reds merged into one bucket", a.Colors)
+	}
+	if a.Colors[0].Hex != "#f70000" {
+		t.Errorf("Hex = %s, want #f70000 (the average of 255 and 240)", a.Colors[0].Hex)
+	}
+	if a.Colors[0].Share != 1 {
+		t.Errorf("Share = %v, want the whole picture", a.Colors[0].Share)
+	}
+}
+
+func TestAnalyzeKeepsColoursInDifferentBuckets(t *testing.T) {
+	// One step coarser than the test above: 224>>4 is 14, not 15, so these are
+	// two colours. Guards the key arithmetic against an off-by-one in the
+	// shift, which a per-pixel array index would happily hide.
+	a, err := AnalyzePixels(halves(8, 4, 0, [3]uint8{255, 0, 0}, [3]uint8{224, 0, 0}), 8, 4, 0)
+	if err != nil {
+		t.Fatalf("AnalyzePixels: %v", err)
+	}
+	if len(a.Colors) != 2 {
+		t.Fatalf("Colors = %v, want the two buckets these reds fall in", a.Colors)
+	}
+}
+
 func TestAnalyzeIgnoresRowPadding(t *testing.T) {
 	packed := halves(4, 4, 0, [3]uint8{0, 0, 0}, [3]uint8{255, 255, 255})
 	padded := halves(4, 4, 4*4+8, [3]uint8{0, 0, 0}, [3]uint8{255, 255, 255})

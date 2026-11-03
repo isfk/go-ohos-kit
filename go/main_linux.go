@@ -18,10 +18,13 @@ import "C"
 import (
 	"encoding/json"
 	"os"
+	"path/filepath"
+	"sync"
 	"time"
 	"unsafe"
 
 	"gokit/core"
+	gostore "gokit/store"
 )
 
 var (
@@ -176,6 +179,150 @@ func gokit_rows_json(offset, limit C.int) *C.char {
 //export gokit_accel
 func gokit_accel(x, y, z C.double) {
 	store.Accel(float64(x), float64(y), float64(z))
+}
+
+// --- SQLite -------------------------------------------------------------
+//
+// The core owns a database file of its own. Two things it does not do: decide
+// where the file lives (HarmonyOS gives a Go library no environment to read a
+// sandbox path from, so ArkTS says), and share it with the platform's
+// relationalStore — two writers on one file is SQLITE_BUSY waiting to happen.
+
+var (
+	dbMu sync.Mutex
+	db   *gostore.Store
+)
+
+// dbOrError is the open database, or the JSON to hand back instead.
+func dbOrError() (*gostore.Store, *C.char) {
+	dbMu.Lock()
+	defer dbMu.Unlock()
+	if db == nil {
+		return nil, errorJSON("database not open")
+	}
+	return db, nil
+}
+
+// dbJSON is one timed database operation: what it did, how many rows it
+// touched, and how long the store itself took. The UI times the same call from
+// outside, so the two numbers separate the database from the bridge without a
+// second experiment.
+func dbJSON(op string, rows int, took time.Duration) *C.char {
+	out, err := json.Marshal(struct {
+		OK     bool   `json:"ok"`
+		Op     string `json:"op"`
+		Rows   int    `json:"rows"`
+		Micros int64  `json:"micros"`
+	}{true, op, rows, took.Microseconds()})
+	if err != nil {
+		return errorJSON(err.Error())
+	}
+	return C.CString(string(out))
+}
+
+// gokit_db_open opens (or creates) the app's database under filesDir. It is
+// idempotent: the UI may call it on every page show.
+//
+//export gokit_db_open
+func gokit_db_open(filesDir *C.char) *C.char {
+	dir := C.GoString(filesDir)
+	if dir == "" {
+		return errorJSON("no files dir")
+	}
+	dbMu.Lock()
+	defer dbMu.Unlock()
+	if db == nil {
+		opened, err := gostore.Open(filepath.Join(dir, "gokit.db"))
+		if err != nil {
+			return errorJSON(err.Error())
+		}
+		db = opened
+	}
+	out, err := json.Marshal(struct {
+		OK   bool   `json:"ok"`
+		Path string `json:"path"`
+	}{true, db.Path()})
+	if err != nil {
+		return errorJSON(err.Error())
+	}
+	return C.CString(string(out))
+}
+
+// gokit_db_seed replaces the table with n rows in one transaction: the bulk
+// import that ../bench/sqlite measures at 0.67 µs a row instead of 9.6.
+//
+//export gokit_db_seed
+func gokit_db_seed(n C.int) *C.char {
+	s, failed := dbOrError()
+	if s == nil {
+		return failed
+	}
+	start := time.Now()
+	rows, err := s.Seed(int(n))
+	took := time.Since(start)
+	if err != nil {
+		return errorJSON(err.Error())
+	}
+	return dbJSON("seed", rows, took)
+}
+
+// gokit_db_page reads one screenful in id order.
+//
+//export gokit_db_page
+func gokit_db_page(offset, limit C.int) *C.char {
+	s, failed := dbOrError()
+	if s == nil {
+		return failed
+	}
+	start := time.Now()
+	rows, err := s.Page(int(offset), int(limit))
+	took := time.Since(start)
+	if err != nil {
+		return errorJSON(err.Error())
+	}
+	out, err := json.Marshal(struct {
+		OK     bool          `json:"ok"`
+		Rows   []gostore.Row `json:"rows"`
+		Count  int           `json:"count"`
+		Micros int64         `json:"micros"`
+	}{true, rows, len(rows), took.Microseconds()})
+	if err != nil {
+		return errorJSON(err.Error())
+	}
+	return C.CString(string(out))
+}
+
+// gokit_db_count is how many rows the table holds, or 0 before it is open.
+//
+//export gokit_db_count
+func gokit_db_count() C.int {
+	dbMu.Lock()
+	defer dbMu.Unlock()
+	if db == nil {
+		return 0
+	}
+	n, err := db.Count()
+	if err != nil {
+		return -1
+	}
+	return C.int(n)
+}
+
+// gokit_db_reset empties the table, keeping the file.
+//
+//export gokit_db_reset
+func gokit_db_reset() *C.char {
+	s, failed := dbOrError()
+	if s == nil {
+		return failed
+	}
+	start := time.Now()
+	err := s.Reset()
+	took := time.Since(start)
+	if err != nil {
+		return errorJSON(err.Error())
+	}
+	return dbJSON("reset", 0, took)
 }
 
 // gokit_lifecycle tells the core the app moved to the foreground (1) or the

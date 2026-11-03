@@ -102,6 +102,38 @@ export interface Event {
   level?: LevelReading;
 }
 
+/** One row of the core's database. */
+export interface DbRow {
+  id: number;
+  title: string;
+  done: boolean;
+}
+
+/** A timed database operation: what it did, and how long the store itself took. */
+export interface DbResult {
+  ok: boolean;
+  op: string;
+  rows: number;
+  micros: number;
+  error?: string;
+}
+
+/** Where the core's database file lives. */
+export interface DbOpenResult {
+  ok: boolean;
+  path: string;
+  error?: string;
+}
+
+/** One page out of the core's database. */
+export interface DbPageResult {
+  ok: boolean;
+  rows: DbRow[];
+  count: number;
+  micros: number;
+  error?: string;
+}
+
 function todosOf(json: string): Todo[] {
   try {
     const e = JSON.parse(json) as Event;
@@ -243,6 +275,54 @@ export class GoCore {
   /** One accelerometer sample (m/s²): the sensor calls this ~50 times a second. */
   accel(x: number, y: number, z: number): void {
     core.accel(x, y, z);
+  }
+
+  /**
+   * Opens the core's own SQLite file. The path is the app's sandbox: a Go
+   * library in HarmonyOS has no environment to read it from.
+   */
+  dbOpen(filesDir: string): DbOpenResult {
+    try {
+      return JSON.parse(core.dbOpen(filesDir)) as DbOpenResult;
+    } catch (err) {
+      const out: DbOpenResult = { ok: false, path: '', error: `${err}` };
+      return out;
+    }
+  }
+
+  /** Replaces the core's table with n rows, in one transaction. */
+  dbSeed(n: number): DbResult {
+    try {
+      return JSON.parse(core.dbSeed(n)) as DbResult;
+    } catch (err) {
+      const out: DbResult = { ok: false, op: 'seed', rows: 0, micros: 0, error: `${err}` };
+      return out;
+    }
+  }
+
+  /** A page of the core's table, in id order. */
+  dbPage(offset: number, limit: number): DbPageResult {
+    try {
+      return JSON.parse(core.dbPage(offset, limit)) as DbPageResult;
+    } catch (err) {
+      const out: DbPageResult = { ok: false, rows: [], count: 0, micros: 0, error: `${err}` };
+      return out;
+    }
+  }
+
+  /** How many rows the core's table holds. */
+  dbCount(): number {
+    return core.dbCount();
+  }
+
+  /** Empties the core's table, keeping the file. */
+  dbReset(): DbResult {
+    try {
+      return JSON.parse(core.dbReset()) as DbResult;
+    } catch (err) {
+      const out: DbResult = { ok: false, op: 'reset', rows: 0, micros: 0, error: `${err}` };
+      return out;
+    }
   }
 
   /** The app is on screen (true) or not. */

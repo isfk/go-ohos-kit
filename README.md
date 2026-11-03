@@ -16,9 +16,9 @@ ArkTS / ArkUI  ──import 'libgocore.so'──▶  NAPI 桥  ──▶  Go 内
 
 | | 数字 |
 |---|---|
-| 桥 | 519 行（`go/main_linux.go` 172 + `go/napi_linux.c` 347），14 个 `//export` |
-| Go 内核 | 690 行逻辑 + 310 行测试（纯 Go，Mac 上 `go test`） |
-| 产物 | `libgocore.so` 4.2 MB，依赖只有 `libace_napi` / `libhilog` / `libc` |
+| 桥 | 798 行（`go/main_linux.go` 347 + `go/napi_linux.c` 451），21 个 `//export` |
+| Go 内核 | 845 行（`core`）+ 177 行（`store`），704 行测试（纯 Go，Mac 上 `go test`） |
+| 产物 | `libgocore.so` 11 MB（SQLite 驱动占 6.8 MB），依赖只有 `libace_napi` / `libhilog` / `libc` |
 
 ## 为什么不用「Go 全包 UI」
 
@@ -380,6 +380,81 @@ Go**。进程活着 = Go 活着；进程被冻结 = Go 一起停。别指望一�
   别把整个列表解成对象数组，让 `LazyForEach` 在 `getData(index)` 里解那一页。
 - 真正的性能瓶颈通常在**渲染**（每帧要创建/更新多少个 ArkUI 节点），不在传输。
 
+## 实测：Go 快在哪，不快在哪
+
+四组数字，真机（HBN-AL00 / API 26）和 Mac M3 都量过。**结论先给：Go 本身不带来速度；
+带来速度的是数据结构、事务和线格式。**
+
+### 一、过桥（真机，`Bridge µs` 按钮，4 次采样）
+
+| 调用 | 时间 |
+|---|---|
+| `remaining()`：一个 int 回来 | **277–296 ns** |
+| `snapshot()`：一个小 JSON 回来并 `JSON.parse` | **1.5–1.7 µs** |
+| `analyze()`：300 KB RGBA 进去，数学全部算完 | 560–615 µs（其中桥 26–143 µs） |
+
+一次跨语言调用 **0.28 µs**。所以「数据库查询要不要异步」这个问题问错了：查一次点查是
+3–8 µs（见下），过桥 1.5 µs，合计是一个 16 ms 帧的 0.05%。**同步查，没事。**
+（第三个数字里的桥份额是两个时钟相减来的，抖动大，只当量级看。）
+
+### 二、像素数学：两个实现错，3.7×（真机）
+
+同样 240×320 / 300 KB RGBA：
+
+| | 真机 | Mac M3 | allocs/op |
+|---|---|---|---|
+| 初版：`map[uint16]*colorBucket` 分色 + `sort` 找前三 | 1906–1939 µs | 812–919 µs | 144 |
+| `map` → `[4096]colorBucket` | — | 398–440 µs | 12 |
+| 再砍掉排序，三槽插入选优 | **472–534 µs** | **359–376 µs** | **9** |
+
+两处都是实现错，不是语言问题：只有 4096 个可能的 key，用哈希表是白付一次查找/像素；
+而为了拿前三名去排 4096 个桶，等于把省下的钱又花回去——同一个函数在单色图上只要 217 µs，
+彩色渐变要 415 µs，差的就是那笔排序。
+
+代价：每次调用多分配 128 KB（4096 × 32 字节，要清零）。照片缓冲本身 300 KB，这个交换
+划算；真要在 30 fps 上跑小图，值得再看一眼。
+
+`go test ./core/ -bench Analyze -benchmem` 有 240×320 / 10 MP / 带 padding 三个用例。
+10 MP 那个是 `maxSamples` 的性质证明：全分辨率照片只要约 1.7 ms（Mac）。
+
+### 三、SQLite 驱动（Mac M3，2 万行，WAL + `synchronous=NORMAL`）
+
+| | `mattn/go-sqlite3`（cgo） | `modernc.org/sqlite`（纯 Go） |
+|---|---|---|
+| 单事务插入 | **672–720 ns/行** | 811–835 ns/行 |
+| autocommit，每行一次 prepare | 9.6–10.0 µs/行 | 12.0–13.0 µs/行 |
+| 2000 行整页扫进 Go | 653–658 µs | 636–679 µs |
+| 主键查一行 | 2.6–3.3 µs | 3.1–3.4 µs |
+| `COUNT(*) + SUM(id)` 全表 | **366–396 µs** | 1.05 ms（2.8×） |
+
+两条反直觉的：
+
+1. **事务比驱动重要 14 倍**：9.6 µs → 0.67 µs 是「进不进事务」的差别，两个驱动同比例。
+2. **读页面两个驱动打平**：钱在 `database/sql` 的 `Scan` 和每行字符串分配（7659 allocs/op），
+   不在驱动。纯 Go 驱动只在计算密集型查询（聚合）上露馅。
+
+复现：`cd go/bench/sqlite && CGO_ENABLED=1 go test -bench . -benchtime 5x -count 2`
+（独立 module，主 `go.mod` 不受影响；mattn 那条**必须**显式 `CGO_ENABLED=1`，否则测的是 stub。）
+
+### 四、Go+SQLite 对 relationalStore（真机，同一张表、同样 2 万行）
+
+两边**都是 SQLite**，所以量的是封装层和线格式：
+
+| | Go（`modernc`，core 自己的文件） | `relationalStore`（平台的文件） |
+|---|---|---|
+| 批量写 2 万行 | **57.2–59.9 ms**（单事务） | 245.0–257.9 ms（10 个 batchInsert） |
+| 读一页 2000 行 | 6.3–10.4 ms（**库本身 4.6–8.7 ms**） | 4.5–8.8 ms |
+
+- **写快 4.2×**：单事务 + 一条 prepared statement。
+- **读打平**：库本身 Go 不吃亏，但 JSON 过桥要再花 2–4.5 ms，正好把优势吃掉。想赢就换
+  二进制线格式（见上一节），这也是 `rows()` 存在的理由。
+- **两个文件，不是一个**：一个文件只有一个写者。让两个句柄写同一个 `.db` 是 `SQLITE_BUSY`
+  的预约单，而且只在最不方便的时候出现。
+
+代价：`modernc.org/sqlite` 让 `libgocore.so` 从 4.2 MB 涨到 **11 MB**。换来的好处不小：
+纯 Go，所以 `scripts/check.sh` 的主机侧能直接跑 `go test ./store/`；而且它的 **TLS 断言
+仍然 clean**——没有破坏那三个 runtime 补丁的前提。
+
 ## 为什么需要那三个 runtime 补丁
 
 这三个坑跟框架无关，是**任何 Go 库进鸿蒙 App** 都要面对的：
@@ -461,20 +536,23 @@ platform/ohos/new.sh myapp --bundle com.x.y # 换包名（会摘掉旧签名，�
 
 `app/` 是个待办清单：Go 管状态、去重、持久化到 `filesDir/todos.json`，还有一个
 goroutine 每秒推一个心跳（右上角 "up 12s"）；ArkTS 只做渲染和转发用户操作。
-旁边挂了四张卡：`Photo` / `Camera`（拍照或选图 → 平台解码 → Go 量像素）、
+旁边挂了五张卡：`Photo` / `Camera`（拍照或选图 → 平台解码 → Go 量像素）、
 水平仪（50Hz 加速度计）、`Start camera`（权限 + surface + 后台关闭），
-外加一个量传输格式的 `Measure 20k`。
+外加量化过的三个按钮组：`Measure 20k`（传输格式）、`Bridge µs`（过桥成本）、
+`SQLite`（Go 自己的库 vs 平台 `relationalStore`）。
 
 真机验过的清单：
 
 - 同步调用（增 / 改 / 删），异步推送（goroutine → 主线程，心跳）
 - 沙箱持久化：重启 App 后待办还在
 - 免权限系统 picker → fd → Go 判格式 + 算哈希
-- 系统相机拍照 + 相册选图，两条路都到同一段像素分析（3.5–3.8 ms / 300 KB RGBA）
+- 系统相机拍照 + 相册选图，两条路都到同一段像素分析（240×320 / 300 KB；Go 侧 1.9 ms →
+  0.56 ms，见「实测：Go 快在哪」）
 - 定位：权限（粗+精）→ 订阅 → Go 算距离/方位/速度；长时任务让它在后台继续报点
 - 50Hz 加速度计（`50 samples/s`，同页其它部分不受影响）
 - 相机预览 + 按 Home 后 242ms 关闭
 - 2000 行列表的三种传输格式实测（见上表）
+- Go 自己的 SQLite 文件（纯 Go 驱动）与平台 `relationalStore` 的同表对比
 
 ## License
 

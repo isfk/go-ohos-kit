@@ -40,6 +40,11 @@ extern void gokit_location_reset(void);
 extern int32_t gokit_rows_count(void);
 extern uint8_t *gokit_rows(int32_t offset, int32_t limit, size_t *length);
 extern char *gokit_rows_json(int32_t offset, int32_t limit);
+extern char *gokit_db_open(char *filesDir);
+extern char *gokit_db_seed(int32_t n);
+extern char *gokit_db_page(int32_t offset, int32_t limit);
+extern int32_t gokit_db_count(void);
+extern char *gokit_db_reset(void);
 
 #define GOKIT_LOG_DOMAIN 0x0
 #define GOKIT_LOG_TAG "gokit"
@@ -336,6 +341,72 @@ static napi_value RowsJSON(napi_env env, napi_callback_info info) {
     return toJS(env, gokit_rows_json(offset, limit));
 }
 
+// dbOpen(filesDir): opens the core's own SQLite file, or says where it already
+// is. The path comes from ArkTS: a Go library in HarmonyOS has no environment
+// to read the sandbox from.
+static napi_value DbOpen(napi_env env, napi_callback_info info) {
+    size_t argc = 1;
+    napi_value argv[1];
+    char *dir = NULL;
+    if (napi_get_cb_info(env, info, &argc, argv, NULL, NULL) == napi_ok && argc > 0) {
+        dir = toC(env, argv[0]);
+    }
+    napi_value out = NULL;
+    char *json = gokit_db_open(dir ? dir : "");
+    if (json) out = toJS(env, json);
+    free(dir);
+    return out;
+}
+
+// dbSeed(n): one bulk import, in one transaction.
+static napi_value DbSeed(napi_env env, napi_callback_info info) {
+    size_t argc = 1;
+    napi_value argv[1];
+    int32_t n = 0;
+    if (napi_get_cb_info(env, info, &argc, argv, NULL, NULL) != napi_ok || argc < 1) {
+        napi_throw_type_error(env, NULL, "dbSeed(n)");
+        return NULL;
+    }
+    if (napi_get_value_int32(env, argv[0], &n) != napi_ok) return NULL;
+    napi_value out = NULL;
+    char *json = gokit_db_seed(n);
+    if (json) out = toJS(env, json);
+    return out;
+}
+
+// dbPage(offset, limit): one screenful, in id order.
+static napi_value DbPage(napi_env env, napi_callback_info info) {
+    size_t argc = 2;
+    napi_value argv[2];
+    int32_t offset = 0, limit = 0;
+    if (napi_get_cb_info(env, info, &argc, argv, NULL, NULL) != napi_ok || argc < 2) {
+        napi_throw_type_error(env, NULL, "dbPage(offset, limit)");
+        return NULL;
+    }
+    if (napi_get_value_int32(env, argv[0], &offset) != napi_ok) return NULL;
+    if (napi_get_value_int32(env, argv[1], &limit) != napi_ok) return NULL;
+    napi_value out = NULL;
+    char *json = gokit_db_page(offset, limit);
+    if (json) out = toJS(env, json);
+    return out;
+}
+
+static napi_value DbCount(napi_env env, napi_callback_info info) {
+    (void)info;
+    napi_value out;
+    napi_create_int32(env, gokit_db_count(), &out);
+    return out;
+}
+
+// dbReset(): empties the table, keeping the file.
+static napi_value DbReset(napi_env env, napi_callback_info info) {
+    (void)info;
+    napi_value out = NULL;
+    char *json = gokit_db_reset();
+    if (json) out = toJS(env, json);
+    return out;
+}
+
 static napi_value Init(napi_env env, napi_value exports) {
     napi_property_descriptor desc[] = {
         {"listen", NULL, Listen, NULL, NULL, NULL, napi_default, NULL},
@@ -355,6 +426,11 @@ static napi_value Init(napi_env env, napi_value exports) {
         {"accel", NULL, Accel, NULL, NULL, NULL, napi_default, NULL},
         {"location", NULL, Location, NULL, NULL, NULL, napi_default, NULL},
         {"locationReset", NULL, LocationReset, NULL, NULL, NULL, napi_default, NULL},
+        {"dbOpen", NULL, DbOpen, NULL, NULL, NULL, napi_default, NULL},
+        {"dbSeed", NULL, DbSeed, NULL, NULL, NULL, napi_default, NULL},
+        {"dbPage", NULL, DbPage, NULL, NULL, NULL, napi_default, NULL},
+        {"dbCount", NULL, DbCount, NULL, NULL, NULL, napi_default, NULL},
+        {"dbReset", NULL, DbReset, NULL, NULL, NULL, napi_default, NULL},
     };
     napi_define_properties(env, exports, sizeof desc / sizeof desc[0], desc);
     return exports;

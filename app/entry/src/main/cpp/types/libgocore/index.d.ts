@@ -11,6 +11,38 @@ export interface Todo {
   done: boolean;
 }
 
+/** One row the core's database holds. */
+export interface DbRow {
+  id: number;
+  title: string;
+  done: boolean;
+}
+
+/** A timed database operation: what it did, and how long the store took. */
+export interface DbResult {
+  ok: boolean;
+  op: string;
+  rows: number;
+  micros: number;
+  error?: string;
+}
+
+/** Where the core's database file is. */
+export interface DbOpenResult {
+  ok: boolean;
+  path: string;
+  error?: string;
+}
+
+/** One page out of the core's database. */
+export interface DbPageResult {
+  ok: boolean;
+  rows: DbRow[];
+  count: number;
+  micros: number;
+  error?: string;
+}
+
 /** Calls the core's events: a new list, or a line of text. */
 export function listen(fn: (json: string) => void): void;
 
@@ -70,3 +102,22 @@ export function rowsJson(offset: number, limit: number): string;
  * sensor's callback: it does no JavaScript work and allocates nothing.
  */
 export function accel(x: number, y: number, z: number): void;
+
+/**
+ * Opens (or creates) the core's own SQLite file under filesDir. Two writers on
+ * one file is SQLITE_BUSY waiting to happen, so this file is the core's alone —
+ * the platform's relationalStore owns the one it manages.
+ */
+export function dbOpen(filesDir: string): string;
+
+/** Replaces the core's table with n rows, in one transaction. */
+export function dbSeed(n: number): string;
+
+/** A page of the core's table, in id order (JSON). */
+export function dbPage(offset: number, limit: number): string;
+
+/** How many rows the core's table holds (0 before it is open). */
+export function dbCount(): number;
+
+/** Empties the core's table, keeping the file. */
+export function dbReset(): string;
