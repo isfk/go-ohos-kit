@@ -8,6 +8,8 @@ Go 负责领域逻辑、状态、网络、SQLite、加解密、后台任务；�
 > 同一个 ArkTS 外壳、同样的八块面板，内核换成 Rust：**0 个 runtime 补丁**，产物 2.7 MB（这里 11 MB）。
 > 那边唯一更贵的是"纯度"—— 它得把 SQLite 的 C 编进产物，这里用纯 Go 驱动、内核零 C 依赖；
 > 代价是同样的 20k 行 seed 59.3 ms vs 12.3 ms。补丁逐条对照、桥读数、体积表见[那边的 CONTEXT.md](https://github.com/isfk/rust-ohos-kit/blob/main/CONTEXT.md)。
+>
+> 语言、生态、踩过的坑、什么时候选哪个：[**Go vs Rust，在 HarmonyOS 上**](docs/go-vs-rust.md)。
 
 ```text
 ArkTS / ArkUI  ──import 'libgocore.so'──▶  NAPI 桥  ──▶  Go 内核
