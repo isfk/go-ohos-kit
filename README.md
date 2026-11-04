@@ -4,10 +4,10 @@
 Go 负责领域逻辑、状态、网络、SQLite、加解密、后台任务；界面用原生 ArkTS/ArkUI
 声明式写，想用什么组件、什么 Kit 都随你。
 
-> 这个仓库是**对照组**。同一套 ArkTS 外壳、同一个八面板演示，内核换成 Rust 的那份在
-> [`../rust-ohos-kit`](../rust-ohos-kit)：那边**一个 runtime 补丁都不需要**，产物 2.7 MB（这里 11 MB），
-> 唯一更贵的地方是数据库的「纯度」—— 那边得编 C 的 SQLite，这里用纯 Go 驱动（但同样的 20k 行 seed，
-> 那边反而快：12.3 ms vs 59.3 ms）。桥读数、补丁逐条对照、体积表都在那份的 `CONTEXT.md` 里。
+> **对照组** · 实验组：[isfk/rust-ohos-kit](https://github.com/isfk/rust-ohos-kit)
+> 同一个 ArkTS 外壳、同样的八块面板，内核换成 Rust：**0 个 runtime 补丁**，产物 2.7 MB（这里 11 MB）。
+> 那边唯一更贵的是"纯度"—— 它得把 SQLite 的 C 编进产物，这里用纯 Go 驱动、内核零 C 依赖；
+> 代价是同样的 20k 行 seed 59.3 ms vs 12.3 ms。补丁逐条对照、桥读数、体积表见[那边的 CONTEXT.md](https://github.com/isfk/rust-ohos-kit/blob/main/CONTEXT.md)。
 
 ```text
 ArkTS / ArkUI  ──import 'libgocore.so'──▶  NAPI 桥  ──▶  Go 内核
@@ -410,6 +410,11 @@ Go**。进程活着 = Go 活着；进程被冻结 = Go 一起停。别指望一�
 一次跨语言调用 **0.28 µs**。所以「数据库查询要不要异步」这个问题问错了：查一次点查是
 3–8 µs（见下），过桥 1.5 µs，合计是一个 16 ms 帧的 0.05%。**同步查，没事。**
 （第三个数字里的桥份额是两个时钟相减来的，抖动大，只当量级看。）
+
+> 上面这组是早先一次采样的记录。后来在同一个 app、同一台设备上重测 5 次：`remaining()` 和
+> `analyze()` 与这里吻合（0.28 µs / 566 µs），而 `snapshot()` 那行读到 **3.0–3.4 µs** ——
+> 同一个 build、同一个按钮，差了 2 倍。所以绝对读数跨会话不可比，要比就在一次会话里比完
+> （[那边的对照表](https://github.com/isfk/rust-ohos-kit#已经量出来的)就是这么做的）。
 
 ### 二、像素数学：两个实现错，3.7×（真机）
 
