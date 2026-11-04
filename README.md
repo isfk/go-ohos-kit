@@ -83,6 +83,7 @@ cp app/build-profile.example.json5 app/build-profile.json5   # 或者直接跑 r
 | 只测 Go 逻辑 | `cd go && go test ./core/` | 不要 |
 | 只编 `.so` | `platform/ohos/build.sh go -project app` | 不要 |
 | 编 + 装 + 跑 + 抓日志 | `platform/ohos/run.sh` | **要** |
+| 桥的读数（不点按钮，N 轮中位数） | `platform/ohos/bench.sh 5` | **要** |
 | 新起一个工程 | `platform/ohos/new.sh myapp [--bundle com.x.y]` | 不要 |
 | Go 升级后先跑这个 | `scripts/check-runtime.sh` | 不要 |
 | 检查补丁还配不配这个 Go | `cd tools/patch && go run . check` | 不要 || 拿补丁的 overlay 给别的工程用 | `cd tools/patch && go run . overlay -o ov.json` | 不要 || 验一个 `.so` 能不能被 musl 加载 | `cd tools/patch && go run . verify libgocore.so` | 不要 |
@@ -413,10 +414,10 @@ Go**。进程活着 = Go 活着；进程被冻结 = Go 一起停。别指望一�
 3–8 µs（见下），过桥 1.5 µs，合计是一个 16 ms 帧的 0.05%。**同步查，没事。**
 （第三个数字里的桥份额是两个时钟相减来的，抖动大，只当量级看。）
 
-> 上面这组是早先一次采样的记录。后来在同一个 app、同一台设备上重测 5 次：`remaining()` 和
-> `analyze()` 与这里吻合（0.28 µs / 566 µs），而 `snapshot()` 那行读到 **3.0–3.4 µs** ——
-> 同一个 build、同一个按钮，差了 2 倍。所以绝对读数跨会话不可比，要比就在一次会话里比完
-> （[那边的对照表](https://github.com/isfk/rust-ohos-kit#已经量出来的)就是这么做的）。
+> 这几个数会随会话漂：同一天晚些时候重测 5 次，`snapshot()` 那行读到过 **3.0–3.4 µs**
+> （同一个 build、同一个按钮）。后来加了 `platform/ohos/bench.sh`（`aa start --pi bench N`，
+> 不点按钮、直接从 hilog 取数），连跑 5 轮又是 **1.5–1.7 µs** —— 所以 3.0–3.4 那次是**会话异常**，
+> 不是这个 build 的性质。结论：绝对读数跨会话不可比，要比就在一次会话里、用同一条命令比完。
 
 ### 二、像素数学：两个实现错，3.7×（真机）
 

@@ -33,6 +33,24 @@ echo "== go vet =="
 echo "== runtime patches =="
 "$here/check-runtime.sh"
 
+echo "== shared conclusions page =="
+# docs/go-vs-rust.md exists in ../rust-ohos-kit too, byte for byte the same, so
+# that either repository reads correctly on its own. Two copies drift, so when the
+# sibling checkout happens to be next to this one they are compared — and when it
+# is not, this says so rather than pretending to have checked.
+sibling=../rust-ohos-kit/docs/go-vs-rust.md
+mine=docs/go-vs-rust.md
+if [ -f "$sibling" ]; then
+	if ! cmp -s "$mine" "$sibling"; then
+		echo "docs/go-vs-rust.md differs from $sibling — change both, or neither" >&2
+		diff "$mine" "$sibling" | head -20 >&2
+		exit 1
+	fi
+	echo "identical to the sibling's copy"
+else
+	echo "no sibling checkout: skipped"
+fi
+
 if [ -z "$build" ]; then
 	echo "== cross build: skipped =="
 	exit 0
