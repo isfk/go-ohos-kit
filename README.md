@@ -115,13 +115,22 @@ tools/patch/                Go 写的小工具，看着这三个补丁（自带 
 app/                        HarmonyOS 工程（DevEco 结构）
   build-profile.example.json5  tracked 模板（不签名）；build-profile.json5 是本机的、被忽略
   entry/src/main/ets/
-    AppState.ets            应用级状态：@ObservedV2 + @Trace，经 AppStorageV2 共享
-    GoCore.ts               类型化的内核封装（唯一知道 JSON 的地方）
-    CameraCard.ets          相机：权限 + surface + 生命周期
-    PhotoCard.ets           拍照/选图 → 平台解码 → Go 量像素
-    LocationCard.ets        定位订阅 + 长时任务（后台继续跑）
-    pages/Index.ets         界面：纯 ArkUI
+    core/                   与界面无关的底座
+      GoCore.ts             类型化的内核封装（唯一知道传输格式的地方）
+      events.ets            Go 事件的唯一入口：kind → 订阅方
+    state/                  @ObservedV2 + @Trace，经 AppStorageV2 共享
+      AppLife.ets           前台/后台（Ability 写、组件读）
+    features/               一个能力一个目录，各自持有自己的状态与订阅
+      todos/                TodoComposer（输入）+ TodoList（行 + 计数）
+      photo/                PhotoCard：拍照/选图 → 平台解码 → Go 量像素
+      camera/               CameraCard：权限 + surface + 生命周期
+      location/             LocationCard：定位订阅 + 长时任务
+      level/                LevelRow：50Hz 加速度计 → Go 平滑 → 水平仪
+      heartbeat/            Heartbeat：内核 goroutine 每秒推一行
+      bench/                MeasureCard / BridgeCard / DbCard 三组实测
+    pages/Index.ets         界面：纯装配（布局 + 避让区 + 待办）
   entry/src/main/cpp/types/libgocore/index.d.ts   内核的 TS 类型
+  entry/src/main/resources/{base,dark}/element/color.json   明/暗两套颜色 token
 ```
 
 ## 桥怎么用
@@ -230,7 +239,7 @@ session.commitConfig(); session.start();
 实测（真机）：`1280×720 preview` 出画面；按 Home 后
 `Ability onBackground 15:43:06.723` → `CloseCamera 15:43:06.965`（**242ms** 后相机全通道关闭）。
 
-坑都在 `CameraCard.ets` 的注释里，摘几条：
+坑都在 `features/camera/CameraCard.ets` 的注释里，摘几条：
 
 - **`user_grant` 权限必须写 `reason` + `usedScene`**，否则 hvigor 报
   `00303218 Configuration Error: The reason and usedScene attributes are mandatory for user_grant permissions`。
@@ -523,7 +532,7 @@ go1.27.3），升级后跑 `scripts/check-runtime.sh`，再跑一遍 `platform/o
 
 1. `go/core/` 里写逻辑 + 测试（纯 Go，Mac 上就能验）
 2. `go/main_linux.go` 加一个 `//export` 函数；`go/napi_linux.c` 里加一个 `napi_property_descriptor`
-3. `app/entry/src/main/cpp/types/libgocore/index.d.ts` 加类型，`GoCore.ts` 包一层
+3. `app/entry/src/main/cpp/types/libgocore/index.d.ts` 加类型，`core/GoCore.ts` 包一层
 
 **新起一个工程**：
 

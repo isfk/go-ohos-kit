@@ -9,7 +9,6 @@ import (
 	"encoding/json"
 	"io"
 	"os"
-	"path/filepath"
 	"sync"
 	"time"
 )
@@ -173,17 +172,62 @@ func itoa(n int) string {
 	return string(d[i:])
 }
 
+// Persister is where the list lives. The core decides what a list is and when it
+// changes; the host decides where it goes — a JSON file in the first version, the
+// app's SQLite now (see ../store). Keeping that behind one interface is what lets
+// this package stay pure Go and testable without a phone.
+type Persister interface {
+	Load() ([]Todo, error)
+	Save([]Todo) error
+}
+
+// FilePersister keeps the list in a JSON file. It is still here for two reasons:
+// the first version of the app wrote it, so the first launch on a device imports
+// it once; and it is the simplest possible Persister to test against.
+type FilePersister struct{ Path string }
+
+// Load reads the file, and treats "no file yet" as an empty list rather than an
+// error: a first launch is not a failure.
+func (p FilePersister) Load() ([]Todo, error) {
+	data, err := os.ReadFile(p.Path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	var todos []Todo
+	if err := json.Unmarshal(data, &todos); err != nil {
+		return nil, err
+	}
+	return todos, nil
+}
+
+// Save writes the whole list through a temporary file, so a half-written list is
+// never what a reader finds.
+func (p FilePersister) Save(todos []Todo) error {
+	data, err := json.Marshal(todos)
+	if err != nil {
+		return err
+	}
+	tmp := p.Path + ".tmp"
+	if err := os.WriteFile(tmp, data, 0o600); err != nil {
+		return err
+	}
+	return os.Rename(tmp, p.Path)
+}
+
 // Store is the app's state. Every method is safe from any goroutine: the UI
 // calls it on its main thread, and the heartbeat calls it from its own.
 type Store struct {
-	mu    sync.Mutex
-	todos []Todo
-	next  int
-	dir   string        // where the list is kept; empty: nowhere
-	emit  func(string)  // tells the UI; nil until the host sets one
-	stop  chan struct{} // the heartbeat's
-	fg    bool          // in the foreground (the heartbeat only ticks then)
-	level *Level        // the accelerometer's, made on first use
+	mu      sync.Mutex
+	todos   []Todo
+	next    int
+	persist Persister     // where the list goes; nil: nowhere
+	emit    func(string)  // tells the UI; nil until the host sets one
+	stop    chan struct{} // the heartbeat's
+	fg      bool          // in the foreground (the heartbeat only ticks then)
+	level   *Level        // the accelerometer's, made on first use
 	// levelPush is when the level last went to the UI: the sensor calls 50
 	// times a second, the screen refreshes 60, and the bridge doesn't need
 	// every sample.
@@ -201,60 +245,50 @@ func (s *Store) Listen(emit func(json string)) {
 	s.mu.Unlock()
 }
 
-// SetDir says where the list is kept (the app's files directory).
-func (s *Store) SetDir(dir string) {
+// SetPersister says where the list is kept. Call it before Start: Start reads.
+func (s *Store) SetPersister(p Persister) {
 	s.mu.Lock()
-	s.dir = dir
+	s.persist = p
 	s.mu.Unlock()
 }
 
-// load reads the list from disk, if there is one.
+// load reads the list from wherever the host keeps it, if anywhere.
 func (s *Store) load() {
 	s.mu.Lock()
-	path := s.path()
+	p := s.persist
 	s.mu.Unlock()
-	if path == "" {
+	if p == nil {
 		return
 	}
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return
-	}
-	var todos []Todo
-	if json.Unmarshal(data, &todos) != nil {
+	todos, err := p.Load()
+	if err != nil || todos == nil {
 		return
 	}
 	s.mu.Lock()
 	s.todos = todos
+	// next is the last id handed out, not the next one: Add increments before it
+	// uses it. Setting it to the highest id here keeps a restart from skipping a
+	// number — the first version of this set it to +1 and lost one per launch.
 	for _, t := range todos {
-		if t.ID >= s.next {
-			s.next = t.ID + 1
+		if t.ID > s.next {
+			s.next = t.ID
 		}
 	}
 	s.mu.Unlock()
 }
 
-// save writes the list, best effort: a demo of the app's own files.
+// save writes the list, best effort: the UI has already been told, and a failed
+// write is not something it could act on anyway. Same bargain the file version
+// made; the difference is that SQLite has far fewer ways to fail.
 func (s *Store) save() {
 	s.mu.Lock()
-	path := s.path()
-	data, err := json.Marshal(s.todos)
+	p := s.persist
+	list := append([]Todo(nil), s.todos...)
 	s.mu.Unlock()
-	if path == "" || err != nil {
+	if p == nil {
 		return
 	}
-	tmp := path + ".tmp"
-	if os.WriteFile(tmp, data, 0o600) == nil {
-		os.Rename(tmp, path)
-	}
-}
-
-// path is the list's file, locked.
-func (s *Store) path() string {
-	if s.dir == "" {
-		return ""
-	}
-	return filepath.Join(s.dir, "todos.json")
+	_ = p.Save(list)
 }
 
 // Snapshot is the list, as the UI takes it.

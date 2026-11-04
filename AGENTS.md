@@ -47,8 +47,8 @@ Go 内核         ← go/core：状态、逻辑、IO；goroutine 随便开
 **4. Go 的事件只有一个入口**
 
 `events.ets` 决定哪个 `kind` 交给谁，页面只调一次 `startCoreEvents()`。
-新增一类事件只改订阅方，**不改页面**。（之前 `Index.ets` 里那串 `if (e.kind === …)` 就是
-反例：每加一个事件都得去改那个 367 行的文件。）
+新增一类事件只改订阅方，**不改页面**。（之前页面里那串 `if (e.kind === …)` 就是反例：
+每加一个事件都得去改一个本不该碰事件分发的页面文件。）
 
 ## 五条铁律
 
@@ -62,7 +62,7 @@ Go 内核         ← go/core：状态、逻辑、IO；goroutine 随便开
 3. **业务逻辑进 `core`**。`go/main_linux.go` 只做搬运（解参数 → 调 core → 序列化），
    `go/napi_linux.c` 只做桥（NAPI ↔ cgo）。往这两个文件里塞业务，就是在把可测的东西变不可测。
 4. **ArkTS 只用状态管理 V2**：`@ComponentV2` + `@Local` / `@Param` / `@Event` / `@Monitor`；
-   跨组件共享用 `@ObservedV2` + `@Trace` + `AppStorageV2`（见 `app/entry/src/main/ets/AppState.ets`）。
+   跨组件共享用 `@ObservedV2` + `@Trace` + `AppStorageV2`（见 `app/entry/src/main/ets/state/AppLife.ets`）。
    V1 的 `@State` / `@Prop` / `@Link` / `@Watch` / `@StorageLink` **不能和 V2 混用**，一个也别加。
 5. **不要动 `platform/ohos/runtime/` 里的三个补丁**，除非在升级 Go。那时按
    `scripts/check-runtime.sh` 的提示做，并保证 `scripts/check.sh` 里的硬断言还成立：
@@ -119,7 +119,7 @@ Go 内核         ← go/core：状态、逻辑、IO；goroutine 随便开
 2. `go/main_linux.go` 加一个 `//export` 函数，`go/napi_linux.c` 里注册
    `napi_property_descriptor`（返回 JSON 字符串，或走 TSFN 推事件）；
 3. `app/entry/src/main/cpp/types/libgocore/index.d.ts` 加类型，
-   `app/entry/src/main/ets/GoCore.ts` 包一层带类型的函数。
+   `app/entry/src/main/ets/core/GoCore.ts` 包一层带类型的函数。
 
 平台侧能力（权限、Kit、surface）留在 ArkTS，不要试图在 Go 里模拟。
 

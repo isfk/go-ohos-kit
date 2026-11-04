@@ -17,6 +17,7 @@ import "C"
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"sync"
@@ -41,10 +42,45 @@ func init() {
 	})
 }
 
+// todos is the adapting layer between the core's list and the SQLite file.
+//
+// It exists so neither side has to know the other: the core defines what a list
+// is and pulls a Persister in; the store owns the table and never hears about
+// core.Todo. Mapping is the bridge's job — no logic lives here.
+type todoPersister struct{ db *gostore.Store }
+
+func (p todoPersister) Load() ([]core.Todo, error) {
+	rows, err := p.db.Todos()
+	if err != nil {
+		return nil, err
+	}
+	out := make([]core.Todo, 0, len(rows))
+	for _, r := range rows {
+		out = append(out, core.Todo{ID: r.ID, Title: r.Title, Done: r.Done})
+	}
+	return out, nil
+}
+
+func (p todoPersister) Save(todos []core.Todo) error {
+	rows := make([]gostore.Todo, 0, len(todos))
+	for _, t := range todos {
+		rows = append(rows, gostore.Todo{ID: t.ID, Title: t.Title, Done: t.Done})
+	}
+	_, err := p.db.SaveTodos(rows)
+	return err
+}
+
 //export gokit_start
 func gokit_start(filesDir *C.char) {
-	if dir := C.GoString(filesDir); dir != "" {
-		store.SetDir(dir)
+	dir := C.GoString(filesDir)
+	if dir != "" {
+		if opened, err := openDatabase(dir); err == nil {
+			store.SetPersister(todoPersister{db: opened})
+		} else {
+			// No database, no persistence: the app still works, and the launch
+			// after this one will pick the list back up.
+			fmt.Println("gokit: no database, the list will not be saved:", err)
+		}
 	}
 	store.Start()
 }
@@ -223,25 +259,54 @@ func dbJSON(op string, rows int, took time.Duration) *C.char {
 // gokit_db_open opens (or creates) the app's database under filesDir. It is
 // idempotent: the UI may call it on every page show.
 //
+// openDatabase opens (or creates) the core's SQLite file under dir, and imports
+// the JSON list the first version wrote — once. The import renames the old file
+// out of the way instead of reading it forever: an empty list is a legitimate
+// state, and re-importing a stale file the next time the user empties their list
+// would be a resurrection, not a migration.
+func openDatabase(dir string) (*gostore.Store, error) {
+	dbMu.Lock()
+	defer dbMu.Unlock()
+	if db != nil {
+		return db, nil
+	}
+	opened, err := gostore.Open(filepath.Join(dir, "gokit.db"))
+	if err != nil {
+		return nil, err
+	}
+	db = opened
+
+	legacy := filepath.Join(dir, "todos.json")
+	if n, err := opened.CountTodos(); err == nil && n == 0 {
+		if todos, err := (core.FilePersister{Path: legacy}).Load(); err == nil && len(todos) > 0 {
+			rows := make([]gostore.Todo, 0, len(todos))
+			for _, t := range todos {
+				rows = append(rows, gostore.Todo{ID: t.ID, Title: t.Title, Done: t.Done})
+			}
+			if _, err := opened.SaveTodos(rows); err == nil {
+				if err := os.Rename(legacy, legacy+".imported"); err == nil {
+					fmt.Println("gokit: imported", len(todos), "todos from todos.json")
+				}
+			}
+		}
+	}
+	return db, nil
+}
+
 //export gokit_db_open
 func gokit_db_open(filesDir *C.char) *C.char {
 	dir := C.GoString(filesDir)
 	if dir == "" {
 		return errorJSON("no files dir")
 	}
-	dbMu.Lock()
-	defer dbMu.Unlock()
-	if db == nil {
-		opened, err := gostore.Open(filepath.Join(dir, "gokit.db"))
-		if err != nil {
-			return errorJSON(err.Error())
-		}
-		db = opened
+	opened, err := openDatabase(dir)
+	if err != nil {
+		return errorJSON(err.Error())
 	}
 	out, err := json.Marshal(struct {
 		OK   bool   `json:"ok"`
 		Path string `json:"path"`
-	}{true, db.Path()})
+	}{true, opened.Path()})
 	if err != nil {
 		return errorJSON(err.Error())
 	}

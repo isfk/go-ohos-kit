@@ -6,14 +6,6 @@ import { appLife } from '../state/AppLife';
 
 const DOMAIN = 0x0000;
 
-/**
- * The demo ships dark. Set this to false to follow the system instead: both
- * palettes live in resources/{base,dark}/element/color.json, so the page colours
- * work either way — only the status bar glyphs need to be told, and that is done
- * here in both cases.
- */
-const FORCE_DARK = true;
-
 export default class EntryAbility extends UIAbility {
   private mainWin: window.Window | undefined = undefined;
 
@@ -23,15 +15,21 @@ export default class EntryAbility extends UIAbility {
     // something expensive (a camera, a sensor) watch the same AppLife object.
     appLife().foreground = true;
 
-    // Before the first frame: a light launch screen on a dark page is the kind of
-    // flash that makes an app feel unfinished.
+    // Follow the system. Both palettes live in resources/{base,dark}, and ArkUI
+    // re-resolves resource colours when the mode changes — nothing to rebuild.
+    // (An earlier build pinned COLOR_MODE_DARK here, which is why the app once
+    // stayed dark on a light phone: "dark by default" is not the same thing as
+    // "follow the system".)
     try {
-      this.context.getApplicationContext().setColorMode(
-        FORCE_DARK ? ConfigurationConstant.ColorMode.COLOR_MODE_DARK
-          : ConfigurationConstant.ColorMode.COLOR_MODE_NOT_SET);
+      this.context.getApplicationContext().setColorMode(ConfigurationConstant.ColorMode.COLOR_MODE_NOT_SET);
     } catch (err) {
       hilog.error(DOMAIN, 'testTag', 'Failed to set colorMode. Cause: %{public}s', JSON.stringify(err));
     }
+  }
+
+  /** The system's current mode. The palettes follow it, so the bars have to. */
+  private isDark(): boolean {
+    return this.context.config.colorMode === ConfigurationConstant.ColorMode.COLOR_MODE_DARK;
   }
 
   onDestroy(): void {
@@ -64,7 +62,7 @@ export default class EntryAbility extends UIAbility {
       const win = windowStage.getMainWindowSync();
       this.mainWin = win;
       win.setImmersiveModeEnabledState(true);
-      this.applyBars(win, FORCE_DARK);
+      this.applyBars(win, this.isDark());
       hilog.info(DOMAIN, 'testTag', 'immersive state=%{public}s', `${win.getImmersiveModeEnabledState()}`);
       try {
         hilog.info(DOMAIN, 'testTag', 'isImmersiveLayout=%{public}s', `${win.isImmersiveLayout()}`);
@@ -93,16 +91,15 @@ export default class EntryAbility extends UIAbility {
   }
 
   /**
-   * Only matters when FORCE_DARK is false: when the system flips, the glyphs have
-   * to flip with it or the clock turns invisible. The page's own colours come
-   * from resources and switch by themselves.
+   * When the system flips, the glyphs have to flip with it or the clock turns
+   * invisible against a transparent bar. The page's own colours switch by
+   * themselves (they are resources); this is the one thing that isn't.
    */
   onConfigurationUpdate(newConfig: Configuration): void {
-    if (FORCE_DARK || this.mainWin === undefined) {
+    if (this.mainWin === undefined) {
       return;
     }
-    const dark = newConfig.colorMode === ConfigurationConstant.ColorMode.COLOR_MODE_DARK;
-    this.applyBars(this.mainWin, dark);
+    this.applyBars(this.mainWin, newConfig.colorMode === ConfigurationConstant.ColorMode.COLOR_MODE_DARK);
   }
 
   onWindowStageDestroy(): void {

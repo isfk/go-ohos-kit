@@ -147,3 +147,94 @@ func TestOpenNeedsAPath(t *testing.T) {
 		t.Error("Open in a missing directory succeeded, want an error")
 	}
 }
+
+func TestSaveTodosReplacesTheList(t *testing.T) {
+	s := open(t)
+	list := []Todo{
+		{ID: 1, Title: "write it down", Done: false},
+		{ID: 2, Title: "tick it off", Done: true},
+	}
+	if n, err := s.SaveTodos(list); err != nil || n != 2 {
+		t.Fatalf("SaveTodos = %d, %v", n, err)
+	}
+	if n, err := s.CountTodos(); err != nil || n != 2 {
+		t.Fatalf("CountTodos = %d, %v", n, err)
+	}
+
+	// The core sends the whole list after every change, so a shorter one has to
+	// mean "these are gone", not "these are the ones I am adding".
+	if n, err := s.SaveTodos(list[:1]); err != nil || n != 1 {
+		t.Fatalf("SaveTodos = %d, %v", n, err)
+	}
+	got, err := s.Todos()
+	if err != nil {
+		t.Fatalf("Todos: %v", err)
+	}
+	if len(got) != 1 || got[0].Title != "write it down" || got[0].Done {
+		t.Fatalf("Todos = %+v", got)
+	}
+}
+
+func TestTodosComeBackInOrder(t *testing.T) {
+	s := open(t)
+	// Out of order on the way in, in order on the way out: the UI draws them in
+	// the order the core holds them, which is by id.
+	in := []Todo{{ID: 3, Title: "third", Done: false}, {ID: 1, Title: "first", Done: false}}
+	if _, err := s.SaveTodos(in); err != nil {
+		t.Fatalf("SaveTodos: %v", err)
+	}
+	got, err := s.Todos()
+	if err != nil {
+		t.Fatalf("Todos: %v", err)
+	}
+	if len(got) != 2 || got[0].ID != 1 || got[1].ID != 3 {
+		t.Fatalf("Todos = %+v", got)
+	}
+}
+
+// The app's list survives the process, which is the whole reason it is in here
+// rather than in a JSON file the UI could write.
+func TestTodosSurviveReopen(t *testing.T) {
+	s := open(t)
+	path := s.Path()
+	if _, err := s.SaveTodos([]Todo{{ID: 1, Title: "durable", Done: true}}); err != nil {
+		t.Fatalf("SaveTodos: %v", err)
+	}
+	if err := s.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+
+	again, err := Open(path)
+	if err != nil {
+		t.Fatalf("reopen: %v", err)
+	}
+	defer again.Close()
+	got, err := again.Todos()
+	if err != nil || len(got) != 1 || got[0].Title != "durable" || !got[0].Done {
+		t.Fatalf("Todos after reopen = %+v, %v", got, err)
+	}
+}
+
+// The benchmark's rows and the app's todos are separate tables: seeding 20k rows
+// must not look like a todo list.
+func TestBenchRowsAndTodosStayApart(t *testing.T) {
+	s := open(t)
+	if _, err := s.Seed(5); err != nil {
+		t.Fatalf("Seed: %v", err)
+	}
+	if _, err := s.SaveTodos([]Todo{{ID: 1, Title: "a todo", Done: false}}); err != nil {
+		t.Fatalf("SaveTodos: %v", err)
+	}
+	if n, err := s.Count(); err != nil || n != 5 {
+		t.Errorf("Count = %d, %v; want the 5 benchmark rows", n, err)
+	}
+	if n, err := s.CountTodos(); err != nil || n != 1 {
+		t.Errorf("CountTodos = %d, %v; want 1", n, err)
+	}
+	if err := s.Reset(); err != nil {
+		t.Fatalf("Reset: %v", err)
+	}
+	if n, err := s.CountTodos(); err != nil || n != 1 {
+		t.Errorf("Reset emptied the todos too: %d, %v", n, err)
+	}
+}

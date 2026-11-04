@@ -102,3 +102,79 @@ func TestRowsPageIsBounded(t *testing.T) {
 		t.Fatalf("past the end: %v", got)
 	}
 }
+
+// fakePersister records what the core asked it to keep, and hands back whatever
+// the test put in it — the seam without a database or a file.
+type fakePersister struct {
+	loaded []Todo
+	saved  [][]Todo
+}
+
+func (f *fakePersister) Load() ([]Todo, error) { return f.loaded, nil }
+
+func (f *fakePersister) Save(todos []Todo) error {
+	f.saved = append(f.saved, append([]Todo(nil), todos...))
+	return nil
+}
+
+func TestTheListComesFromAndGoesToThePersister(t *testing.T) {
+	p := &fakePersister{loaded: []Todo{
+		{ID: 1, Title: "from last time", Done: true},
+		{ID: 7, Title: "and this one", Done: false},
+	}}
+	s := New()
+	s.Listen(func(string) {})
+	s.SetPersister(p)
+	s.Start()
+	defer s.Stop()
+
+	// Start reads: what the persister had is what the UI is shown.
+	if len(s.todos) != 2 || s.todos[0].Title != "from last time" {
+		t.Fatalf("loaded %v", s.todos)
+	}
+	// And the next id carries on from the highest one seen, not from the count:
+	// a list that was deleted from must not reuse an id.
+	if got := s.Add("new"); !strings.Contains(got, "\"id\":8") {
+		t.Fatalf("new todo got the wrong id: %s", got)
+	}
+	if len(p.saved) != 1 || len(p.saved[0]) != 3 {
+		t.Fatalf("saved %d times: %v", len(p.saved), p.saved)
+	}
+
+	s.Toggle(8)
+	if len(p.saved) != 2 || !p.saved[1][2].Done {
+		t.Fatalf("toggle did not reach the persister: %v", p.saved)
+	}
+}
+
+// No persister is a legitimate state: the tests above run that way, and so does a
+// launch where the database could not be opened.
+func TestNoPersisterIsNotACrash(t *testing.T) {
+	s := New()
+	s.Listen(func(string) {})
+	s.Start()
+	defer s.Stop()
+	s.Add("still works")
+	if s.Remaining() != 1 {
+		t.Fatalf("remaining: %d", s.Remaining())
+	}
+}
+
+// The file persister is what the first version wrote, and what the app imports
+// once. A missing file reads as an empty list, not an error: a first launch is
+// not a failure.
+func TestFilePersisterRoundTrip(t *testing.T) {
+	path := t.TempDir() + "/todos.json"
+	p := FilePersister{Path: path}
+	if got, err := p.Load(); err != nil || got != nil {
+		t.Fatalf("missing file: %v, %v", got, err)
+	}
+	want := []Todo{{ID: 1, Title: "kept", Done: true}}
+	if err := p.Save(want); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+	got, err := p.Load()
+	if err != nil || len(got) != 1 || got[0].Title != "kept" || !got[0].Done {
+		t.Fatalf("Load: %v, %v", got, err)
+	}
+}

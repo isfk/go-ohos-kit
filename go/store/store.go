@@ -34,6 +34,23 @@ const schema = `CREATE TABLE IF NOT EXISTS rows (
 	done  INTEGER NOT NULL
 )`
 
+// todosSchema is the app's own list. Separate table from the benchmark's rows:
+// one is data a person typed, the other is 20k strings a button made.
+const todosSchema = `CREATE TABLE IF NOT EXISTS todos (
+	id    INTEGER PRIMARY KEY,
+	title TEXT    NOT NULL,
+	done  INTEGER NOT NULL
+)`
+
+// Todo is one row of the app's list, as this package stores it. It is not
+// core.Todo: the two sides agree on a shape, not on a type, and the bridge does
+// the mapping (see ../main_linux.go).
+type Todo struct {
+	ID    int    `json:"id"`
+	Title string `json:"title"`
+	Done  bool   `json:"done"`
+}
+
 // Store is one SQLite file. Its methods are safe for concurrent use.
 type Store struct {
 	mu   sync.Mutex
@@ -68,6 +85,10 @@ func Open(path string) (*Store, error) {
 		}
 	}
 	if _, err := db.Exec(schema); err != nil {
+		db.Close()
+		return nil, err
+	}
+	if _, err := db.Exec(todosSchema); err != nil {
 		db.Close()
 		return nil, err
 	}
@@ -154,6 +175,72 @@ func (s *Store) Page(offset, limit int) ([]Row, error) {
 	return rows, out.Err()
 }
 
+// Todos is the app's list, in id order.
+func (s *Store) Todos() ([]Todo, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	out, err := s.db.Query("SELECT id, title, done FROM todos ORDER BY id")
+	if err != nil {
+		return nil, err
+	}
+	defer out.Close()
+
+	var todos []Todo
+	for out.Next() {
+		var (
+			t    Todo
+			done int
+		)
+		if err := out.Scan(&t.ID, &t.Title, &done); err != nil {
+			return nil, err
+		}
+		t.Done = done != 0
+		todos = append(todos, t)
+	}
+	return todos, out.Err()
+}
+
+// CountTodos is how many the app's list holds.
+func (s *Store) CountTodos() (int, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	var n int
+	err := s.db.QueryRow("SELECT COUNT(*) FROM todos").Scan(&n)
+	return n, err
+}
+
+// SaveTodos replaces the app's list, in one transaction: the whole list arrives
+// from the core after every change, so a delete-and-insert is both the simplest
+// and the atomic way to keep two copies of it in step.
+func (s *Store) SaveTodos(todos []Todo) (int, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	tx, err := s.db.Begin()
+	if err != nil {
+		return 0, err
+	}
+	defer tx.Rollback() // a no-op after a successful Commit
+
+	if _, err := tx.Exec("DELETE FROM todos"); err != nil {
+		return 0, err
+	}
+	stmt, err := tx.Prepare("INSERT INTO todos (id, title, done) VALUES (?, ?, ?)")
+	if err != nil {
+		return 0, err
+	}
+	defer stmt.Close()
+	for _, t := range todos {
+		if _, err := stmt.Exec(t.ID, t.Title, t.Done); err != nil {
+			return 0, err
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return 0, err
+	}
+	return len(todos), nil
+}
+
 // Reset empties the table, keeping the file.
 func (s *Store) Reset() error {
 	s.mu.Lock()
@@ -162,9 +249,9 @@ func (s *Store) Reset() error {
 	return err
 }
 
-// Close closes the file. The app calls it when it is done with the database;
-// the demo lets the process exit instead, and SQLite's WAL is recovered on the
-// next open either way.
+// Close closes the file. The app calls it when it is done with the database; the
+// demo lets the process exit instead, and SQLite's WAL is recovered on the next
+// open either way.
 func (s *Store) Close() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()

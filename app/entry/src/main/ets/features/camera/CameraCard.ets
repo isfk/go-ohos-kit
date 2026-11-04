@@ -182,12 +182,22 @@ export struct CameraCard {
             }
           })
         // Never removed: taking a sibling out of a Stack rebuilds the
-        // XComponent, and a rebuilt one has a new surface — the running
-        // session would keep drawing into the old one (a black panel).
-        Text('no preview')
-          .fontSize(12)
-          .fontColor($r('app.color.text_hint'))
-          .opacity(this.running ? 0 : 1)
+        // XComponent, and a rebuilt one has a new surface — the running session
+        // would keep drawing into the old one (a black panel).
+        //
+        // Opaque, and the full size of the panel, for a second reason: stopping
+        // the camera leaves the surface holding its last frame, so a bare text
+        // label left a frozen picture sitting under "no preview".
+        Column() {
+          Text('no preview')
+            .fontSize(12)
+            .fontColor($r('app.color.text_hint'))
+        }
+        .width('100%')
+        .height('100%')
+        .justifyContent(FlexAlign.Center)
+        .backgroundColor($r('app.color.page_bg'))
+        .opacity(this.running ? 0 : 1)
       }
       .width('100%')
       .aspectRatio(this.aspect)
