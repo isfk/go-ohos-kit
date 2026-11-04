@@ -4,6 +4,11 @@
 Go 负责领域逻辑、状态、网络、SQLite、加解密、后台任务；界面用原生 ArkTS/ArkUI
 声明式写，想用什么组件、什么 Kit 都随你。
 
+> 这个仓库是**对照组**。同一套 ArkTS 外壳、同一个八面板演示，内核换成 Rust 的那份在
+> [`../rust-ohos-kit`](../rust-ohos-kit)：那边**一个 runtime 补丁都不需要**，产物 2.7 MB（这里 11 MB），
+> 唯一更贵的地方是数据库的「纯度」—— 那边得编 C 的 SQLite，这里用纯 Go 驱动（但同样的 20k 行 seed，
+> 那边反而快：12.3 ms vs 59.3 ms）。桥读数、补丁逐条对照、体积表都在那份的 `CONTEXT.md` 里。
+
 ```text
 ArkTS / ArkUI  ──import 'libgocore.so'──▶  NAPI 桥  ──▶  Go 内核
 （原生 UI）      ◀── 事件（threadsafe function）──      （goroutine 随便开）
