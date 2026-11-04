@@ -5,22 +5,42 @@
 // writes (HEIF included) and can scale — that's not the core's business. The
 // core gets plain RGBA and answers questions about light: how bright, where,
 // and out of which colours.
+//
+// The result is drawn on its own dark bed, the way a lightbox or an instrument
+// display is: the numbers are light-on-dark in both themes, so a cell's alpha
+// can mean brightness and nothing else. That is also why the colours below are
+// literals instead of theme tokens — this block must not follow the page theme.
 
 import { cameraPicker, camera } from '@kit.CameraKit';
 import { image } from '@kit.ImageKit';
 import { fileIo as fs } from '@kit.CoreFileKit';
 import { photoAccessHelper } from '@kit.MediaLibraryKit';
 import { BusinessError } from '@kit.BasicServicesKit';
-import { AnalyzeResult, FileInfo, gocore, ImageAnalysis } from '../../core/GoCore';
+import { AnalyzeResult, ColorShare, FileInfo, gocore, ImageAnalysis } from '../../core/GoCore';
 
 /** Photos are decoded to this on the wide side: 12 MP would only cost time. */
 const ANALYSIS_WIDTH = 320;
+
+/** The analysis bed: deliberately theme-independent (see the file header). */
+const BED_BG = '#0B0D14';
+const BED_LABEL = '#8A93A5';
+const BED_META = '#6C7586';
+const BED_TEXT = '#C9D1DE';
+const BED_BAR = '#38FFFFFF';
+const BED_TALLEST = '#00ADD8';
+const BED_RULE = '#24FFFFFF';
+
+/** 8 cells of 14 plus 7 gaps of 1: the light map's own width. */
+const GRID_SIDE = 119;
+/** 8 bars of 16 plus 7 gaps of 4: the levels' own width. */
+const BAR_SIDE = 156;
 
 @ComponentV2
 export struct PhotoCard {
   @Local private file: FileInfo | undefined = undefined;
   @Local private analysis: ImageAnalysis | undefined = undefined;
-  @Local private status: string = 'no photo yet';
+  /** Empty until something happened: the help line below says the rest. */
+  @Local private status: string = '';
   @Local private busy: boolean = false;
 
   private async fromGallery(): Promise<void> {
@@ -114,7 +134,22 @@ export struct PhotoCard {
     return `${f.kind} · ${mb} MB · ${f.sha256.substring(0, 12)}…`;
   }
 
-  /** 8×8 squares: where the light falls, not one average for the whole frame. */
+  /** Which luma bucket holds the most pixels: that bar carries the accent. */
+  private tallest(a: ImageAnalysis): number {
+    let at = 0;
+    for (let i = 0; i < a.histo.length; i++) {
+      if (a.histo[i] > a.histo[at]) {
+        at = i;
+      }
+    }
+    return at;
+  }
+
+  /**
+   * 8×8 squares: where the light falls, not one average for the whole frame.
+   * The cell is white at the brightness the core measured, so a bright corner
+   * reads bright — the panel is the dark bed it sits on.
+   */
   @Builder
   lightGrid(a: ImageAnalysis) {
     Column({ space: 1 }) {
@@ -122,104 +157,187 @@ export struct PhotoCard {
         Row({ space: 1 }) {
           ForEach([0, 1, 2, 3, 4, 5, 6, 7], (col: number) => {
             Row()
-              .width(11)
-              .height(11)
-              .borderRadius(2)
-              .backgroundColor(`rgba(0, 0, 0, ${(a.grid[row * 8 + col] / 100).toFixed(2)})`)
-              .borderWidth(0.5)
-              .borderColor($r('app.color.hairline'))
-          }, (col: number) => `${row}-${col}`)
+              .width(14)
+              .height(14)
+              .borderRadius(3)
+              .backgroundColor(`rgba(255, 255, 255, ${(a.grid[row * 8 + col] / 100 * 0.92).toFixed(2)})`)
+          }, (col: number) => `c${row}-${col}`)
         }
-      }, (row: number) => `${row}`)
+      }, (row: number) => `r${row}`)
     }
+    .width(GRID_SIDE)
   }
 
   /** The same numbers as bars: darkest on the left, brightest on the right. */
   @Builder
   histogram(a: ImageAnalysis) {
-    Row({ space: 3 }) {
-      ForEach(a.histo, (pct: number, i: number) => {
-        Column() {
-          Blank()
+    Column({ space: 6 }) {
+      Row({ space: 4 }) {
+        ForEach(a.histo, (pct: number, i: number) => {
+          Column() {
+            Blank()
+            Row()
+              .width(16)
+              .height(Math.max(2, pct) * 0.56)   // 100% → 56pt tall
+              .borderRadius(2)
+              .backgroundColor(this.tallest(a) === i ? BED_TALLEST : BED_BAR)
+          }
+          .height(56)
+          .justifyContent(FlexAlign.End)
+        }, (pct: number, i: number) => `b${i}`)
+      }
+      .height(56)
+
+      Row()
+        .width(BAR_SIDE)
+        .height(1)
+        .backgroundColor(BED_RULE)
+
+      Row() {
+        Text('dark')
+          .fontSize(11)
+          .fontColor(BED_LABEL)
+        Blank()
+        Text('bright')
+          .fontSize(11)
+          .fontColor(BED_LABEL)
+      }
+      .width(BAR_SIDE)
+    }
+    .alignItems(HorizontalAlign.Start)
+  }
+
+  /** The picture's own three colours: the only saturated thing on the page. */
+  @Builder
+  palette(a: ImageAnalysis) {
+    Row({ space: 12 }) {
+      ForEach(a.colors, (c: ColorShare) => {
+        Row({ space: 6 }) {
           Row()
             .width(14)
-            .height(Math.max(1, pct) * 0.6)   // 100% → 60pt tall
-            .borderRadius(2)
-            .backgroundColor(i < 3 ? '#33000000' : i < 6 ? '#66000000' : '#CC000000')
+            .height(14)
+            .borderRadius(7)
+            .backgroundColor(c.hex)
+            .border({ width: 1, color: BED_RULE })
+          Text(`${Math.round(c.share * 100)}%`)
+            .fontSize(12)
+            .fontColor(BED_TEXT)
+            .fontFeature('"tnum" 1')
         }
-        .height(60)
-        .justifyContent(FlexAlign.End)
-      }, (pct: number, i: number) => `${i}`)
+        .alignItems(VerticalAlign.Center)
+      }, (c: ColorShare) => c.hex)
     }
-    .height(60)
+  }
+
+  @Builder
+  analysisBed(a: ImageAnalysis) {
+    Column({ space: 12 }) {
+      Row({ space: 16 }) {
+        Column({ space: 6 }) {
+          Text('Light')
+            .fontSize(11)
+            .fontColor(BED_LABEL)
+          this.lightGrid(a)
+        }
+        .alignItems(HorizontalAlign.Start)
+
+        Column({ space: 12 }) {
+          Column({ space: 6 }) {
+            Text('Levels')
+              .fontSize(11)
+              .fontColor(BED_LABEL)
+            this.histogram(a)
+          }
+          .alignItems(HorizontalAlign.Start)
+
+          Column({ space: 6 }) {
+            Text('Palette')
+              .fontSize(11)
+              .fontColor(BED_LABEL)
+            this.palette(a)
+          }
+          .alignItems(HorizontalAlign.Start)
+        }
+        .alignItems(HorizontalAlign.Start)
+        .layoutWeight(1)
+      }
+      .width('100%')
+      .alignItems(VerticalAlign.Top)
+
+      if (this.fileLine().length > 0) {
+        Text(this.fileLine())
+          .fontSize(11)
+          .fontColor(BED_META)
+          .maxLines(1)
+          .textOverflow({ overflow: TextOverflow.Ellipsis })
+          .width('100%')
+      }
+    }
+    .alignItems(HorizontalAlign.Start)
+    .width('100%')
+    .padding(12)
+    .backgroundColor(BED_BG)
+    .borderRadius(8)
   }
 
   build() {
-    Column({ space: 8 }) {
-      Row({ space: 12 }) {
-        Button('Photo')
-          .fontSize(14)
-          .backgroundColor($r('app.color.accent_tint'))
-          .fontColor($r('app.color.accent'))
+    Column({ space: 12 }) {
+      Row({ space: 8 }) {
+        Text('Photo')
+          .fontSize(15)
+          .fontWeight(FontWeight.Medium)
+          .fontColor($r('app.color.text_primary'))
+        Blank()
+        Button('Gallery')
+          .type(ButtonType.Normal)
+          .height(32)
+          .fontSize(13)
+          .borderRadius(8)
+          .padding({ left: 12, right: 12 })
+          .backgroundColor($r('app.color.surface_raised'))
+          .fontColor($r('app.color.text_primary'))
           .onClick(() => {
             this.fromGallery();
           })
-        Button('Camera')
-          .fontSize(14)
-          .backgroundColor($r('app.color.accent_tint'))
-          .fontColor($r('app.color.accent'))
+        Button('Take photo')
+          .type(ButtonType.Normal)
+          .height(32)
+          .fontSize(13)
+          .borderRadius(8)
+          .padding({ left: 12, right: 12 })
+          .backgroundColor($r('app.color.surface_raised'))
+          .fontColor($r('app.color.text_primary'))
           .enabled(!this.busy)
           .onClick(() => {
             this.fromCamera();
           })
-        Text(this.status)
-          .fontSize(11)
-          .fontColor($r('app.color.text_secondary'))
-          .layoutWeight(1)
-          .maxLines(2)
       }
       .width('100%')
+      .alignItems(VerticalAlign.Center)
 
       if (this.analysis !== undefined) {
-        Row({ space: 16 }) {
-          this.lightGrid(this.analysis)
-          Column({ space: 6 }) {
-            this.histogram(this.analysis)
-            Row({ space: 8 }) {
-              ForEach(this.analysis.colors, (c: ColorShareLike) => {
-                Row({ space: 4 }) {
-                  Row()
-                    .width(10)
-                    .height(10)
-                    .borderRadius(5)
-                    .backgroundColor(c.hex)
-                    .borderWidth(0.5)
-                    .borderColor('#33000000')
-                  Text(`${Math.round(c.share * 100)}%`)
-                    .fontSize(10)
-                    .fontColor($r('app.color.text_secondary'))
-                }
-              }, (c: ColorShareLike) => c.hex)
-            }
-            Text(this.fileLine())
-              .fontSize(10)
-              .fontColor($r('app.color.text_hint'))
-              .maxLines(1)
-              .textOverflow({ overflow: TextOverflow.Ellipsis })
-          }
-          .alignItems(HorizontalAlign.Start)
-          .layoutWeight(1)
-        }
-        .width('100%')
-        .alignItems(VerticalAlign.Top)
+        this.analysisBed(this.analysis)
+      } else {
+        Text('Choose a photo to read its light and its colours')
+          .fontSize(13)
+          .fontColor($r('app.color.text_secondary'))
+          .width('100%')
+      }
+
+      if (this.status.length > 0) {
+        Text(this.status)
+          .fontSize(12)
+          .fontColor($r('app.color.text_muted'))
+          .fontFeature('"tnum" 1')
+          .maxLines(2)
+          .width('100%')
       }
     }
+    .alignItems(HorizontalAlign.Start)
     .width('100%')
+    .padding(16)
+    .backgroundColor($r('app.color.surface'))
+    .borderRadius(12)
+    .border({ width: 1, color: $r('app.color.hairline') })
   }
-}
-
-/** ArkTS wants the shape spelled out where it's used in a lambda. */
-interface ColorShareLike {
-  hex: string;
-  share: number;
 }

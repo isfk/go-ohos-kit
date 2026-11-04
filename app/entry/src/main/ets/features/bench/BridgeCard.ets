@@ -16,7 +16,10 @@ import { gocore } from '../../core/GoCore';
 
 @ComponentV2
 export struct BridgeCard {
-  @Local private result: string = '';
+  @Local private intLine: string = '';
+  @Local private jsonLine: string = '';
+  @Local private pixelsLine: string = '';
+  @Local private note: string = '';
 
   /** Nanoseconds since boot: Date.now() is far too coarse for one call. */
   private nowNs(): number {
@@ -69,28 +72,97 @@ export struct BridgeCard {
     const mathNs = micros * 1000;
 
     const us = (ns: number): string => (ns / 1000).toFixed(1);
-    const kb = px.byteLength / 1024;
-    this.result = `int ${intNs.toFixed(0)}ns · json+parse ${us(strNs)}µs` +
-      ` · ${kb.toFixed(0)}KB in ${us(pixNs)}µs (math ${us(mathNs)}µs → bridge ${us(pixNs - mathNs)}µs)`;
+    this.intLine = `${us(intNs)} µs`;
+    this.jsonLine = `${us(strNs)} µs`;
+    this.pixelsLine = `${us(pixNs)} µs`;
+    this.note = `maths ${us(mathNs)} µs · bridge ${us(pixNs - mathNs)} µs`;
     // Same numbers in the log: a screenshot is evidence, text is easier to cite.
-    console.info(`gokit-bench bridge: ${this.result}`);
+    console.info(`gokit-bench bridge: int ${this.intLine} · json+parse ${this.jsonLine}` +
+      ` · ${this.note}`);
   }
 
   build() {
-    Row({ space: 12 }) {
-      Button('Bridge µs')
-        .fontSize(14)
-        .backgroundColor($r('app.color.accent_tint'))
-        .fontColor($r('app.color.accent'))
-        .onClick(() => {
-          this.run();
-        })
-      Text(this.result.length > 0 ? this.result : 'How expensive is a call?')
-        .fontSize(11)
-        .fontColor($r('app.color.text_secondary'))
-        .layoutWeight(1)
-        .maxLines(4)
+    Column({ space: 12 }) {
+      Row({ space: 8 }) {
+        Text('Bridge')
+          .fontSize(15)
+          .fontWeight(FontWeight.Medium)
+          .fontColor($r('app.color.text_primary'))
+        Blank()
+        Button('Measure')
+          .type(ButtonType.Normal)
+          .height(32)
+          .fontSize(13)
+          .borderRadius(8)
+          .padding({ left: 16, right: 16 })
+          .backgroundColor($r('app.color.surface_raised'))
+          .fontColor($r('app.color.text_primary'))
+          .onClick(() => {
+            this.run();
+          })
+      }
+      .width('100%')
+      .alignItems(VerticalAlign.Center)
+
+      if (this.intLine.length > 0) {
+        Column({ space: 8 }) {
+          Row({ space: 12 }) {
+            Text('int back')
+              .fontSize(11)
+              .fontColor($r('app.color.text_muted'))
+              .width(72)
+            Text(this.intLine)
+              .fontSize(13)
+              .fontColor($r('app.color.text_primary'))
+              .fontFeature('"tnum" 1')
+          }
+          .width('100%')
+          Row({ space: 12 }) {
+            Text('JSON back')
+              .fontSize(11)
+              .fontColor($r('app.color.text_muted'))
+              .width(72)
+            Text(this.jsonLine)
+              .fontSize(13)
+              .fontColor($r('app.color.text_primary'))
+              .fontFeature('"tnum" 1')
+          }
+          .width('100%')
+          Row({ space: 12 }) {
+            Text('300 KB in')
+              .fontSize(11)
+              .fontColor($r('app.color.text_muted'))
+              .width(72)
+            Text(this.pixelsLine)
+              .fontSize(13)
+              .fontColor($r('app.color.text_primary'))
+              .fontFeature('"tnum" 1')
+          }
+          .width('100%')
+        }
+        .alignItems(HorizontalAlign.Start)
+        .width('100%')
+      } else {
+        Text('An empty call, a parsed one, and a large buffer')
+          .fontSize(13)
+          .fontColor($r('app.color.text_secondary'))
+          .width('100%')
+      }
+
+      if (this.note.length > 0) {
+        Text(this.note)
+          .fontSize(12)
+          .fontColor($r('app.color.text_muted'))
+          .fontFeature('"tnum" 1')
+          .maxLines(2)
+          .width('100%')
+      }
     }
+    .alignItems(HorizontalAlign.Start)
     .width('100%')
+    .padding(16)
+    .backgroundColor($r('app.color.surface'))
+    .borderRadius(12)
+    .border({ width: 1, color: $r('app.color.hairline') })
   }
 }

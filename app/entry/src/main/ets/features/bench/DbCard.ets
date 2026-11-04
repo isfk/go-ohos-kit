@@ -12,6 +12,9 @@
 // the platform's writer builds ValuesBuckets here), because that is what the
 // app actually pays. The Go side also reports the store's own clock, so the
 // same call says what the bridge cost without a second experiment.
+//
+// The two sides are named on the page rather than implied: "Go · seed 20k" and
+// "RDB · seed 20k" were a decoder ring for anyone who had not read this file.
 
 import { relationalStore } from '@kit.ArkData';
 import { systemDateTime } from '@kit.BasicServicesKit';
@@ -28,11 +31,18 @@ export struct DbCard {
   @Local private goPageLine: string = '';
   @Local private rdbSeedLine: string = '';
   @Local private rdbPageLine: string = '';
+  /**
+   * The core's row count. A state field and not `gocore.dbCount()` inline in
+   * the Text: a plain call in build() gives the renderer nothing to watch, so
+   * the label kept saying 0 after a seed.
+   */
+  @Local private coreRows: number = 0;
   private rdb: relationalStore.RdbStore | undefined = undefined;
 
   aboutToAppear(): void {
     const opened = gocore.dbOpen(getContext(this).filesDir);
-    this.status = opened.ok ? 'go db ready' : `go db: ${opened.error ?? 'open failed'}`;
+    this.status = opened.ok ? 'Go file ready' : `open failed: ${opened.error ?? 'unknown'}`;
+    this.refreshCount();
   }
 
   /** Nanoseconds since boot: Date.now() can't see a single call. */
@@ -44,16 +54,22 @@ export struct DbCard {
     console.info(`gokit-bench db: ${line}`);
   }
 
+  private refreshCount(): void {
+    this.coreRows = gocore.dbCount();
+  }
+
   /** One bulk import, one transaction — the shape that ../bench/sqlite says matters most. */
   private goSeed(): void {
     const start = this.nowNs();
     const res = gocore.dbSeed(SEED);
     const total = (this.nowNs() - start) / 1e6;
+    this.refreshCount();
     if (!res.ok) {
       this.goSeedLine = res.error ?? 'seed failed';
       return;
     }
-    this.goSeedLine = `${total.toFixed(1)} ms · store ${(res.micros / 1000).toFixed(1)} ms · ${res.rows} rows`;
+    this.goSeedLine = `seed · ${total.toFixed(1)} ms (store ${(res.micros / 1000).toFixed(1)})` +
+      ` · ${res.rows} rows`;
     this.note(`go seed ${SEED}: ${this.goSeedLine}`);
   }
 
@@ -61,11 +77,13 @@ export struct DbCard {
     const start = this.nowNs();
     const res = gocore.dbPage(0, PAGE);
     const total = (this.nowNs() - start) / 1e6;
+    this.refreshCount();
     if (!res.ok) {
       this.goPageLine = res.error ?? 'page failed';
       return;
     }
-    this.goPageLine = `${total.toFixed(1)} ms · store ${(res.micros / 1000).toFixed(2)} ms · ${res.count} rows`;
+    this.goPageLine = `page · ${total.toFixed(1)} ms (store ${(res.micros / 1000).toFixed(2)})` +
+      ` · ${res.count} rows`;
     this.note(`go page ${PAGE}: ${this.goPageLine}`);
   }
 
@@ -103,7 +121,7 @@ export struct DbCard {
       await store.batchInsert('bench', values);
     }
     const total = (this.nowNs() - start) / 1e6;
-    this.rdbSeedLine = `${total.toFixed(1)} ms · ${SEED} rows in ${SEED / CHUNK} batches`;
+    this.rdbSeedLine = `seed · ${total.toFixed(1)} ms · ${SEED} rows in ${SEED / CHUNK} batches`;
     this.note(`rdb seed ${SEED}: ${this.rdbSeedLine}`);
   }
 
@@ -120,7 +138,7 @@ export struct DbCard {
     }
     set.close();
     const total = (this.nowNs() - start) / 1e6;
-    this.rdbPageLine = `${total.toFixed(1)} ms · ${n} rows`;
+    this.rdbPageLine = `page · ${total.toFixed(1)} ms · ${n} rows`;
     this.note(`rdb page ${PAGE}: ${this.rdbPageLine}`);
   }
 
@@ -132,90 +150,147 @@ export struct DbCard {
     this.goPageLine = '';
     this.rdbSeedLine = '';
     this.rdbPageLine = '';
+    this.refreshCount();
     this.status = 'both empty';
   }
 
   build() {
-    Column({ space: 8 }) {
+    Column({ space: 12 }) {
       Row({ space: 8 }) {
         Text('SQLite')
-          .fontSize(13)
-          .fontColor($r('app.color.text_secondary'))
+          .fontSize(15)
+          .fontWeight(FontWeight.Medium)
+          .fontColor($r('app.color.text_primary'))
         Blank()
         Text(this.status)
-          .fontSize(11)
-          .fontColor($r('app.color.text_secondary'))
+          .fontSize(12)
+          .fontColor($r('app.color.text_muted'))
       }
       .width('100%')
+      .alignItems(VerticalAlign.Center)
 
       // Go's own file, through the bridge: one transaction, one statement.
+      Text('Go core')
+        .fontSize(11)
+        .fontColor($r('app.color.text_muted'))
       Row({ space: 8 }) {
-        Button('Go · seed 20k')
-          .fontSize(12)
-          .height(30)
-          .backgroundColor($r('app.color.accent_tint'))
-          .fontColor($r('app.color.accent'))
+        Button('Seed 20k')
+          .type(ButtonType.Normal)
+          .height(32)
+          .fontSize(13)
+          .borderRadius(8)
+          .padding({ left: 12, right: 12 })
+          .backgroundColor($r('app.color.surface_raised'))
+          .fontColor($r('app.color.text_primary'))
           .onClick(() => {
             this.goSeed();
           })
-        Button('Go · page 2k')
-          .fontSize(12)
-          .height(30)
-          .backgroundColor($r('app.color.accent_tint'))
-          .fontColor($r('app.color.accent'))
+        Button('Page 2k')
+          .type(ButtonType.Normal)
+          .height(32)
+          .fontSize(13)
+          .borderRadius(8)
+          .padding({ left: 12, right: 12 })
+          .backgroundColor($r('app.color.surface_raised'))
+          .fontColor($r('app.color.text_primary'))
           .onClick(() => {
             this.goPage();
           })
-        Text(this.goSeedLine.length > 0 ? this.goSeedLine : this.goPageLine)
-          .fontSize(11)
-          .fontColor($r('app.color.text_secondary'))
-          .layoutWeight(1)
-          .maxLines(2)
       }
       .width('100%')
+      if (this.goSeedLine.length > 0) {
+        Text(this.goSeedLine)
+          .fontSize(12)
+          .fontColor($r('app.color.text_secondary'))
+          .fontFeature('"tnum" 1')
+          .maxLines(2)
+          .width('100%')
+      }
+      if (this.goPageLine.length > 0) {
+        Text(this.goPageLine)
+          .fontSize(12)
+          .fontColor($r('app.color.text_secondary'))
+          .fontFeature('"tnum" 1')
+          .maxLines(2)
+          .width('100%')
+      }
+
+      Divider()
+        .color($r('app.color.divider'))
+        .strokeWidth(1)
 
       // The platform's file, the same rows, from the other side.
+      Text('Platform store')
+        .fontSize(11)
+        .fontColor($r('app.color.text_muted'))
       Row({ space: 8 }) {
-        Button('RDB · seed 20k')
-          .fontSize(12)
-          .height(30)
-          .backgroundColor($r('app.color.accent_tint'))
-          .fontColor($r('app.color.accent'))
+        Button('Seed 20k')
+          .type(ButtonType.Normal)
+          .height(32)
+          .fontSize(13)
+          .borderRadius(8)
+          .padding({ left: 12, right: 12 })
+          .backgroundColor($r('app.color.surface_raised'))
+          .fontColor($r('app.color.text_primary'))
           .onClick(() => {
             this.rdbSeed();
           })
-        Button('RDB · page 2k')
-          .fontSize(12)
-          .height(30)
-          .backgroundColor($r('app.color.accent_tint'))
-          .fontColor($r('app.color.accent'))
+        Button('Page 2k')
+          .type(ButtonType.Normal)
+          .height(32)
+          .fontSize(13)
+          .borderRadius(8)
+          .padding({ left: 12, right: 12 })
+          .backgroundColor($r('app.color.surface_raised'))
+          .fontColor($r('app.color.text_primary'))
           .onClick(() => {
             this.rdbPage();
           })
-        Text(this.rdbSeedLine.length > 0 ? this.rdbSeedLine : this.rdbPageLine)
-          .fontSize(11)
-          .fontColor($r('app.color.text_secondary'))
-          .layoutWeight(1)
-          .maxLines(2)
       }
       .width('100%')
-
-      Row({ space: 8 }) {
-        Button('Reset both')
+      if (this.rdbSeedLine.length > 0) {
+        Text(this.rdbSeedLine)
           .fontSize(12)
-          .height(30)
+          .fontColor($r('app.color.text_secondary'))
+          .fontFeature('"tnum" 1')
+          .maxLines(2)
+          .width('100%')
+      }
+      if (this.rdbPageLine.length > 0) {
+        Text(this.rdbPageLine)
+          .fontSize(12)
+          .fontColor($r('app.color.text_secondary'))
+          .fontFeature('"tnum" 1')
+          .maxLines(2)
+          .width('100%')
+      }
+
+      Row({ space: 12 }) {
+        Button('Reset both')
+          .type(ButtonType.Normal)
+          .height(32)
+          .fontSize(13)
+          .borderRadius(8)
+          .padding({ left: 0, right: 12 })
           .backgroundColor('#00000000')
           .fontColor($r('app.color.danger'))
           .onClick(() => {
             this.resetBoth();
           })
-        Text(`${gocore.dbCount()} rows in the core's file`)
-          .fontSize(11)
-          .fontColor($r('app.color.text_secondary'))
-          .layoutWeight(1)
+        Blank()
+        Text(`${this.coreRows} rows in the core's file`)
+          .fontSize(12)
+          .fontColor($r('app.color.text_muted'))
+          .fontFeature('"tnum" 1')
       }
       .width('100%')
+      .alignItems(VerticalAlign.Center)
     }
+    .alignItems(HorizontalAlign.Start)
     .width('100%')
+    .padding(16)
+    .backgroundColor($r('app.color.surface'))
+    .borderRadius(12)
+    .border({ width: 1, color: $r('app.color.hairline') })
   }
 }

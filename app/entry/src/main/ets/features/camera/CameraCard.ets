@@ -13,14 +13,18 @@ import { AppLife, appLife } from '../../state/AppLife';
 
 @ComponentV2
 export struct CameraCard {
-  @Local private status: string = 'camera off';
+  @Local private status: string = '';
   @Local private running: boolean = false;
   private controller: XComponentController = new XComponentController();
   private session: camera.PhotoSession | undefined = undefined;
   private surfaceId: string = '';
   private wanted: boolean = false;
-  /** The preview's own aspect: a fixed height would squash the frames. */
-  @Local private aspect: number = 4 / 3;
+  /**
+   * The preview's own aspect: a fixed height would squash the frames. 16:9 is
+   * the canvas until a profile arrives, because 4:3 made an idle panel tall
+   * enough to push everything below it off the first screen.
+   */
+  @Local private aspect: number = 16 / 9;
 
   // The page says when it's gone, and the ability says when the app goes to
   // the background: a camera left open holds the device and eats the battery,
@@ -142,12 +146,21 @@ export struct CameraCard {
   }
 
   build() {
-    Column({ space: 8 }) {
-      Row({ space: 12 }) {
-        Button(this.running ? 'Stop camera' : 'Start camera')
-          .fontSize(14)
-          .backgroundColor($r('app.color.accent_tint'))
-          .fontColor($r('app.color.accent'))
+    Column({ space: 12 }) {
+      Row({ space: 8 }) {
+        Text('Camera')
+          .fontSize(15)
+          .fontWeight(FontWeight.Medium)
+          .fontColor($r('app.color.text_primary'))
+        Blank()
+        Button(this.running ? 'Stop' : 'Start')
+          .type(ButtonType.Normal)
+          .height(32)
+          .fontSize(13)
+          .borderRadius(8)
+          .padding({ left: 16, right: 16 })
+          .backgroundColor(this.running ? $r('app.color.surface_raised') : $r('app.color.accent_tint'))
+          .fontColor(this.running ? $r('app.color.text_primary') : $r('app.color.accent'))
           .onClick(() => {
             if (this.running) {
               this.stop();
@@ -155,13 +168,9 @@ export struct CameraCard {
               this.start();
             }
           })
-        Text(this.status)
-          .fontSize(11)
-          .fontColor($r('app.color.text_secondary'))
-          .layoutWeight(1)
-          .maxLines(2)
       }
       .width('100%')
+      .alignItems(VerticalAlign.Center)
 
       // The panel the platform draws into: its surface is what the camera
       // service writes frames to, and the UI never sees them. It keeps its
@@ -188,23 +197,41 @@ export struct CameraCard {
         // Opaque, and the full size of the panel, for a second reason: stopping
         // the camera leaves the surface holding its last frame, so a bare text
         // label left a frozen picture sitting under "no preview".
-        Column() {
-          Text('no preview')
-            .fontSize(12)
-            .fontColor($r('app.color.text_hint'))
+        Column({ space: 4 }) {
+          Text('No preview')
+            .fontSize(13)
+            .fontColor($r('app.color.text_secondary'))
+          Text('Frames land here once the camera is on')
+            .fontSize(11)
+            .fontColor($r('app.color.text_muted'))
         }
         .width('100%')
         .height('100%')
         .justifyContent(FlexAlign.Center)
-        .backgroundColor($r('app.color.page_bg'))
+        .backgroundColor($r('app.color.surface_raised'))
         .opacity(this.running ? 0 : 1)
       }
       .width('100%')
       .aspectRatio(this.aspect)
-      .borderRadius(12)
-      .backgroundColor($r('app.color.surface_dim'))
+      .borderRadius(8)
+      .border({ width: 1, color: $r('app.color.hairline') })
+      .backgroundColor($r('app.color.surface_raised'))
       .clip(true)
+
+      if (this.status.length > 0) {
+        Text(this.status)
+          .fontSize(12)
+          .fontColor($r('app.color.text_muted'))
+          .fontFeature('"tnum" 1')
+          .maxLines(2)
+          .width('100%')
+      }
     }
+    .alignItems(HorizontalAlign.Start)
     .width('100%')
+    .padding(16)
+    .backgroundColor($r('app.color.surface'))
+    .borderRadius(12)
+    .border({ width: 1, color: $r('app.color.hairline') })
   }
 }

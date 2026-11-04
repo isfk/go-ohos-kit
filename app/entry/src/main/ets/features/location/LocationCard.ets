@@ -3,6 +3,10 @@
 // Location Kit measures where you are (that's the platform's job: GNSS, wifi,
 // cells). The core turns successive fixes into what a person actually asks:
 // how far have I walked, in which direction, how fast.
+//
+// The track reads as four figures on a 2×2 grid — walked, speed, fixes, time —
+// with the raw fix underneath as meta, because the figures are the answer and
+// the coordinates are the evidence.
 
 import { abilityAccessCtrl, common, Permissions } from '@kit.AbilityKit';
 import { geoLocationManager } from '@kit.LocationKit';
@@ -93,8 +97,9 @@ export struct LocationCard {
         return;
       }
       this.point = result.point;
-      const p = result.point;
-      this.status = `${p.lat.toFixed(5)}, ${p.lon.toFixed(5)} · ±${p.accuracy.toFixed(0)} m`;
+      // The figures below are the readout now, so the footer goes quiet: it is
+      // for what went wrong, not for repeating the coordinates.
+      this.status = '';
     };
     this.listener = listener;
     gocore.locationReset();
@@ -156,37 +161,61 @@ export struct LocationCard {
     this.status = 'not tracking';
   }
 
-  private trackLine(): string {
+  /** Standing still has no direction: a 0° reading there is atan2(0, 0). */
+  private bearingLine(p: GeoPoint): string {
+    return p.moved > 1 ? ` · bearing ${p.bearing.toFixed(0)}°` : '';
+  }
+
+  // The figures read this.point in build() themselves. They used to arrive as
+  // builder parameters, which are passed by value — the numbers then stayed at
+  // whatever they were when the panel was first drawn.
+  private walkedLine(): string {
+    const p = this.point;
+    return p === undefined ? '—' : `${p.moved.toFixed(0)} m`;
+  }
+
+  private speedLine(): string {
+    const p = this.point;
+    return p === undefined ? '—' : `${p.speed.toFixed(1)} m/s`;
+  }
+
+  private fixesLine(): string {
+    const p = this.point;
+    return p === undefined ? '—' : `${p.fixes}`;
+  }
+
+  private timeLine(): string {
+    const p = this.point;
+    return p === undefined ? '—' : `${p.seconds.toFixed(0)} s`;
+  }
+
+  private coordLine(): string {
     const p = this.point;
     if (p === undefined) {
       return '';
     }
-    // Standing still has no direction: a 0° reading there is an artefact of
-    // atan2(0, 0), not information.
-    const bearing = p.moved > 1 ? ` · bearing ${p.bearing.toFixed(0)}°` : '';
-    return `${p.moved.toFixed(0)} m walked · ${p.speed.toFixed(1)} m/s · ${p.fixes} fixes` +
-      ` · ${p.seconds.toFixed(0)}s${bearing}`;
+    return `${p.lat.toFixed(5)}, ${p.lon.toFixed(5)} · ±${p.accuracy.toFixed(0)} m${this.bearingLine(p)}`;
   }
 
   build() {
-    Column({ space: 8 }) {
-      Row({ space: 12 }) {
-        Button(this.watching ? 'Stop location' : 'Locate')
-          .fontSize(14)
-          .backgroundColor($r('app.color.accent_tint'))
-          .fontColor($r('app.color.accent'))
-          .onClick(() => {
-            if (this.watching) {
-              this.stop();
-            } else {
-              this.start();
-            }
-          })
+    Column({ space: 12 }) {
+      Row({ space: 8 }) {
+        Text('Location')
+          .fontSize(15)
+          .fontWeight(FontWeight.Medium)
+          .fontColor($r('app.color.text_primary'))
+        Blank()
         if (this.watching) {
-          Button(this.bgTask ? 'Stop background' : 'Background')
-            .fontSize(14)
-            .backgroundColor($r('app.color.accent_tint'))
-            .fontColor($r('app.color.accent'))
+          // A second, quieter action: it only exists while a track is running,
+          // and it changes how the track survives, not what it measures.
+          Button(this.bgTask ? 'Stop background' : 'Keep in background')
+            .type(ButtonType.Normal)
+            .height(32)
+            .fontSize(13)
+            .borderRadius(8)
+            .padding({ left: 12, right: 12 })
+            .backgroundColor($r('app.color.surface_raised'))
+            .fontColor($r('app.color.text_primary'))
             .onClick(() => {
               if (this.bgTask) {
                 this.stopBackground();
@@ -196,21 +225,100 @@ export struct LocationCard {
               }
             })
         }
-        Text(this.status)
-          .fontSize(11)
-          .fontColor($r('app.color.text_secondary'))
-          .layoutWeight(1)
-          .maxLines(2)
+        Button(this.watching ? 'Stop' : 'Track')
+          .type(ButtonType.Normal)
+          .height(32)
+          .fontSize(13)
+          .borderRadius(8)
+          .padding({ left: 16, right: 16 })
+          .backgroundColor(this.watching ? $r('app.color.surface_raised') : $r('app.color.accent_tint'))
+          .fontColor(this.watching ? $r('app.color.text_primary') : $r('app.color.accent'))
+          .onClick(() => {
+            if (this.watching) {
+              this.stop();
+            } else {
+              this.start();
+            }
+          })
       }
       .width('100%')
+      .alignItems(VerticalAlign.Center)
 
       if (this.point !== undefined) {
-        Text(this.trackLine())
-          .fontSize(11)
-          .fontColor($r('app.color.text_hint'))
+        Row({ space: 16 }) {
+          Column({ space: 16 }) {
+            Column({ space: 4 }) {
+              Text('Walked')
+                .fontSize(11)
+                .fontColor($r('app.color.text_muted'))
+              Text(this.walkedLine())
+                .fontSize(20)
+                .fontColor($r('app.color.text_primary'))
+                .fontFeature('"tnum" 1')
+            }
+            .alignItems(HorizontalAlign.Start)
+            Column({ space: 4 }) {
+              Text('Fixes')
+                .fontSize(11)
+                .fontColor($r('app.color.text_muted'))
+              Text(this.fixesLine())
+                .fontSize(20)
+                .fontColor($r('app.color.text_primary'))
+                .fontFeature('"tnum" 1')
+            }
+            .alignItems(HorizontalAlign.Start)
+          }
+          .alignItems(HorizontalAlign.Start)
+          .layoutWeight(1)
+
+          Column({ space: 16 }) {
+            Column({ space: 4 }) {
+              Text('Speed')
+                .fontSize(11)
+                .fontColor($r('app.color.text_muted'))
+              Text(this.speedLine())
+                .fontSize(20)
+                .fontColor($r('app.color.text_primary'))
+                .fontFeature('"tnum" 1')
+            }
+            .alignItems(HorizontalAlign.Start)
+            Column({ space: 4 }) {
+              Text('Time')
+                .fontSize(11)
+                .fontColor($r('app.color.text_muted'))
+              Text(this.timeLine())
+                .fontSize(20)
+                .fontColor($r('app.color.text_primary'))
+                .fontFeature('"tnum" 1')
+            }
+            .alignItems(HorizontalAlign.Start)
+          }
+          .alignItems(HorizontalAlign.Start)
+          .layoutWeight(1)
+        }
+        .width('100%')
+        .alignItems(VerticalAlign.Top)
+
+        Text(this.coordLine())
+          .fontSize(12)
+          .fontColor($r('app.color.text_muted'))
+          .fontFeature('"tnum" 1')
+          .width('100%')
+      }
+
+      if (this.status.length > 0) {
+        Text(this.status)
+          .fontSize(12)
+          .fontColor($r('app.color.text_muted'))
+          .maxLines(2)
           .width('100%')
       }
     }
+    .alignItems(HorizontalAlign.Start)
     .width('100%')
+    .padding(16)
+    .backgroundColor($r('app.color.surface'))
+    .borderRadius(12)
+    .border({ width: 1, color: $r('app.color.hairline') })
   }
 }

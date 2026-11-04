@@ -6,6 +6,10 @@
 // The rules this follows are in AGENTS.md ("边界"): state stays in the component
 // that uses it, a Go event has exactly one entry point, and nothing here talks to
 // libgocore.so directly.
+//
+// Visually it is one column of panels on a 4px rhythm: 16 between panels, 12
+// inside one. Each panel owns its header row, so grouping is carried by the
+// surface rather than by a rule between unrelated controls.
 
 import { window, LengthMetrics } from '@kit.ArkUI';
 import { gocore, Event, Todo } from '../core/GoCore';
@@ -93,28 +97,81 @@ struct Index {
     this.todos = gocore.remove(id);
   }
 
+  /** The panel's own count. It is page chrome now, so the page counts it. */
+  private leftLine(): string {
+    if (this.todos.length === 0) {
+      return 'empty';
+    }
+    const left = this.todos.filter((t: Todo): boolean => !t.done).length;
+    return `${left} of ${this.todos.length} left`;
+  }
+
   build() {
-    // The whole page scrolls: five cards, a preview and a list are taller than any
-    // phone. The camera surface rides along inside it — verified on the device: it
-    // scrolls and it survives a stop/start without coming back the wrong size.
+    // The whole page scrolls: the panels, the preview and the list are taller
+    // than any phone. The camera surface rides along inside it — verified on the
+    // device: it scrolls and it survives a stop/start without coming back the
+    // wrong size.
     Scroll() {
-      Column({ space: 12 }) {
-        Row() {
-          Text('Todos')
-            .fontSize(32)
-            .fontWeight(FontWeight.Bold)
-          Blank()
-          // A line a second from the core's own goroutine: the bridge, both ways.
+      Column({ space: 16 }) {
+        // The page header: what this is, and the core's own clock. The uptime
+        // belongs here and not in a card — it is about the whole page.
+        Row({ space: 12 }) {
+          Column({ space: 4 }) {
+            Text('GoKit')
+              .fontSize(28)
+              .fontWeight(FontWeight.Medium)
+              .fontColor($r('app.color.text_primary'))
+            Text('The logic in Go, the interface in ArkTS')
+              .fontSize(13)
+              .fontColor($r('app.color.text_secondary'))
+          }
+          .alignItems(HorizontalAlign.Start)
+          .layoutWeight(1)
+
           Heartbeat()
         }
         .width('100%')
-        .alignItems(VerticalAlign.Bottom)
+        .alignItems(VerticalAlign.Top)
 
-        TodoComposer({
-          onAdd: (title: string): void => {
-            this.add(title);
-          },
-        })
+        // Todos: the field and the list are one panel, so the list a row is
+        // added to is the thing directly under the field that adds it.
+        Column({ space: 12 }) {
+          Row({ space: 12 }) {
+            Text('Todos')
+              .fontSize(15)
+              .fontWeight(FontWeight.Medium)
+              .fontColor($r('app.color.text_primary'))
+            Blank()
+            Text(this.leftLine())
+              .fontSize(12)
+              .fontColor($r('app.color.text_muted'))
+              .fontFeature('"tnum" 1')
+          }
+          .width('100%')
+          .alignItems(VerticalAlign.Center)
+
+          TodoComposer({
+            onAdd: (title: string): void => {
+              this.add(title);
+            },
+          })
+
+          TodoList({
+            todos: this.todos,
+            onToggle: (id: number): void => {
+              this.toggle(id);
+            },
+            onRemove: (id: number): void => {
+              this.remove(id);
+            },
+          })
+        }
+        .alignItems(HorizontalAlign.Start)
+        .width('100%')
+        .padding(16)
+        .backgroundColor($r('app.color.surface'))
+        .borderRadius(12)
+        .border({ width: 1, color: $r('app.color.hairline') })
 
         // A photo the platform takes and decodes, and the core measures.
         PhotoCard()
@@ -129,29 +186,25 @@ struct Index {
         // A runtime permission, a native surface, and a session to tear down.
         CameraCard()
 
-        // The rows themselves, and the count that goes with them.
-        TodoList({
-          todos: this.todos,
-          onToggle: (id: number): void => {
-            this.toggle(id);
-          },
-          onRemove: (id: number): void => {
-            this.remove(id);
-          },
-        })
+        // Three measurements, each with its own panel: the wire format, the
+        // bridge, and the database. Measured rather than argued about. The
+        // label is closer to its own panels than to the one above it.
+        Text('Measurements')
+          .fontSize(12)
+          .fontColor($r('app.color.text_muted'))
+          .padding({ top: 8 })
 
-        // Three measurements, each with its own card: the wire format, the bridge,
-        // and the database. Measured rather than argued about.
         MeasureCard()
         BridgeCard()
         DbCard()
       }
       .width('100%')
+      .alignItems(HorizontalAlign.Start)
       .padding({
         top: LengthMetrics.vp(this.topInset + 12),
         start: LengthMetrics.vp(16),
         end: LengthMetrics.vp(16),
-        bottom: LengthMetrics.vp(this.bottomInset + 12),
+        bottom: LengthMetrics.vp(this.bottomInset + 16),
       })
     }
     .width('100%')

@@ -20,15 +20,33 @@ export struct TodoComposer {
 
   build() {
     Row({ space: 8 }) {
-      TextInput({ text: this.draft, placeholder: 'What needs doing?' })
+      TextInput({ text: this.draft, placeholder: 'Add a todo' })
         .layoutWeight(1)
+        .height(40)
+        .fontSize(15)
+        .fontColor($r('app.color.text_primary'))
+        .placeholderColor($r('app.color.text_muted'))
+        .placeholderFont({ size: 15 })
+        .backgroundColor($r('app.color.surface_raised'))
+        .borderRadius(8)
+        .padding({ left: 12, right: 12 })
         .onChange((v: string) => {
           this.draft = v;
         })
         .onSubmit(() => {
           this.submit();
         })
+      // The page's one filled button: the action that writes something.
+      // ButtonType.Normal because the default capsule would make this a pill,
+      // and a pill is not a button — it is what every quick mockup looks like.
       Button('Add')
+        .type(ButtonType.Normal)
+        .height(40)
+        .fontSize(14)
+        .borderRadius(8)
+        .padding({ left: 20, right: 20 })
+        .backgroundColor($r('app.color.text_primary'))
+        .fontColor($r('app.color.on_primary'))
         .enabled(this.draft.trim().length > 0)
         .onClick(() => {
           this.submit();

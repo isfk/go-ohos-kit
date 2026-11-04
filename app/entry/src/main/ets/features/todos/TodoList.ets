@@ -1,9 +1,11 @@
 // The list, as plain rows rather than a List: it lives inside the page's Scroll,
-// and a nested scrollable eats the gesture that would reach the cards below it
+// and a nested scrollable eats the gesture that would reach the panels below it
 // (measured — a List at 220vp filled the whole viewport).
 //
 // No state of its own: the page owns the todos and this renders them. Toggles and
-// deletes go out as events, the page decides what they mean.
+// deletes go out as events, the page decides what they mean. The count moved up
+// to the panel header when the list moved under its own input — the page already
+// owns the array, so it counts it there.
 
 import { Todo } from '../../core/GoCore';
 
@@ -13,47 +15,53 @@ export struct TodoList {
   @Event onToggle: (id: number) => void = (id: number): void => {};
   @Event onRemove: (id: number) => void = (id: number): void => {};
 
-  /** Counted here because the list is the only thing showing it. */
-  private remaining(): number {
-    return this.todos.filter((t: Todo): boolean => !t.done).length;
-  }
-
   build() {
-    Column({ space: 12 }) {
+    Column() {
+      if (this.todos.length === 0) {
+        Text('Nothing yet')
+          .fontSize(13)
+          .fontColor($r('app.color.text_muted'))
+          .padding({ top: 4, bottom: 4 })
+      }
       ForEach(this.todos, (t: Todo) => {
+        // One row height for every row, so the checkbox column, the titles and
+        // the delete action all sit on the same lines.
         Row({ space: 12 }) {
           Toggle({ type: ToggleType.Checkbox, isOn: t.done })
             .width(24)
             .height(24)
+            .selectedColor($r('app.color.accent'))
             .onChange(() => {
               this.onToggle(t.id);
             })
           Text(t.title)
-            .fontSize(17)
+            .fontSize(15)
+            .fontColor(t.done ? $r('app.color.text_muted') : $r('app.color.text_primary'))
             .layoutWeight(1)
+            .maxLines(2)
+            .textOverflow({ overflow: TextOverflow.Ellipsis })
             .decoration({
               type: t.done ? TextDecorationType.LineThrough : TextDecorationType.None,
-              color: $r('app.color.text_secondary'),
+              color: $r('app.color.text_muted'),
             })
-          Button('Delete')
+          // Quiet on purpose: a red button on every row shouts twelve times.
+          Text('Delete')
             .fontSize(13)
-            .height(30)
-            .backgroundColor('#00000000')
-            .fontColor($r('app.color.danger'))
+            .fontColor($r('app.color.text_muted'))
+            .padding({ left: 8, right: 2, top: 10, bottom: 10 })
             .onClick(() => {
               this.onRemove(t.id);
             })
         }
         .width('100%')
-        .padding({ top: 8, bottom: 8 })
-        .border({ width: { bottom: 0.5 }, color: $r('app.color.divider') })
+        // A wrapped title needs a second line, so this is a floor and not a
+        // fixed height: the row grows for two lines of text and no further.
+        .constraintSize({ minHeight: 48 })
+        .padding({ top: 6, bottom: 6 })
+        .border({ width: { bottom: 1 }, color: $r('app.color.divider') })
       }, (t: Todo) => t.id.toString())
-
-      Text(this.remaining() === 1 ? '1 thing left' : `${this.remaining()} things left`)
-        .fontSize(13)
-        .fontColor($r('app.color.text_secondary'))
-        .width('100%')
     }
     .width('100%')
+    .alignItems(HorizontalAlign.Start)
   }
 }
