@@ -9,8 +9,8 @@ import { geoLocationManager } from '@kit.LocationKit';
 import { backgroundTaskManager } from '@kit.BackgroundTasksKit';
 import { wantAgent } from '@kit.AbilityKit';
 import { BusinessError } from '@kit.BasicServicesKit';
-import { GeoPoint, gocore } from './GoCore';
-import { AppLife, appLife } from './AppState';
+import { GeoPoint, gocore } from '../../core/GoCore';
+import { AppLife, appLife } from '../../state/AppLife';
 
 @ComponentV2
 export struct LocationCard {
@@ -173,8 +173,8 @@ export struct LocationCard {
       Row({ space: 12 }) {
         Button(this.watching ? 'Stop location' : 'Locate')
           .fontSize(14)
-          .backgroundColor('#1F0A59F7')
-          .fontColor('#0A59F7')
+          .backgroundColor($r('app.color.accent_tint'))
+          .fontColor($r('app.color.accent'))
           .onClick(() => {
             if (this.watching) {
               this.stop();
@@ -185,8 +185,8 @@ export struct LocationCard {
         if (this.watching) {
           Button(this.bgTask ? 'Stop background' : 'Background')
             .fontSize(14)
-            .backgroundColor('#1F0A59F7')
-            .fontColor('#0A59F7')
+            .backgroundColor($r('app.color.accent_tint'))
+            .fontColor($r('app.color.accent'))
             .onClick(() => {
               if (this.bgTask) {
                 this.stopBackground();
@@ -198,7 +198,7 @@ export struct LocationCard {
         }
         Text(this.status)
           .fontSize(11)
-          .fontColor('#99000000')
+          .fontColor($r('app.color.text_secondary'))
           .layoutWeight(1)
           .maxLines(2)
       }
@@ -207,7 +207,7 @@ export struct LocationCard {
       if (this.point !== undefined) {
         Text(this.trackLine())
           .fontSize(11)
-          .fontColor('#66000000')
+          .fontColor($r('app.color.text_hint'))
           .width('100%')
       }
     }

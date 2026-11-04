@@ -9,7 +9,7 @@
 import { camera } from '@kit.CameraKit';
 import { abilityAccessCtrl, common, Permissions } from '@kit.AbilityKit';
 import { BusinessError } from '@kit.BasicServicesKit';
-import { AppLife, appLife } from './AppState';
+import { AppLife, appLife } from '../../state/AppLife';
 
 @ComponentV2
 export struct CameraCard {
@@ -146,8 +146,8 @@ export struct CameraCard {
       Row({ space: 12 }) {
         Button(this.running ? 'Stop camera' : 'Start camera')
           .fontSize(14)
-          .backgroundColor('#1F0A59F7')
-          .fontColor('#0A59F7')
+          .backgroundColor($r('app.color.accent_tint'))
+          .fontColor($r('app.color.accent'))
           .onClick(() => {
             if (this.running) {
               this.stop();
@@ -157,7 +157,7 @@ export struct CameraCard {
           })
         Text(this.status)
           .fontSize(11)
-          .fontColor('#99000000')
+          .fontColor($r('app.color.text_secondary'))
           .layoutWeight(1)
           .maxLines(2)
       }
@@ -186,13 +186,13 @@ export struct CameraCard {
         // session would keep drawing into the old one (a black panel).
         Text('no preview')
           .fontSize(12)
-          .fontColor('#66000000')
+          .fontColor($r('app.color.text_hint'))
           .opacity(this.running ? 0 : 1)
       }
       .width('100%')
       .aspectRatio(this.aspect)
       .borderRadius(12)
-      .backgroundColor('#0F000000')
+      .backgroundColor($r('app.color.surface_dim'))
       .clip(true)
     }
     .width('100%')

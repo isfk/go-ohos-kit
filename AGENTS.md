@@ -15,6 +15,41 @@ NAPI 桥         ← go/napi_linux.c：只搬运，不含业务
 Go 内核         ← go/core：状态、逻辑、IO；goroutine 随便开
 ```
 
+## 边界：什么放 Go，什么放 ArkTS
+
+四条规则。定它们是为了下次加功能时不用再讨论一遍。
+
+**1. 门槛是「能不能测」，不是「哪个更快」**
+
+| 放 Go | 放 ArkTS |
+|---|---|
+| 领域规则、状态机、校验、持久化、迁移、调度、并发 | `getContext()`、权限、Kit、surface、Ability/页面生命周期、渲染 |
+
+一行判据：**这段代码能不能在没有 ArkUI 的情况下写单测？能 → Go，不能 → ArkTS。**
+性能不是理由（见「已被证伪的说法」：桥 0.28µs，换语言也不变快）。
+
+**2. 桥只搬数据，`GoCore.ts` 是唯一知道传输格式的文件**
+
+- 组件不许 `import core from 'libgocore.so'`；JSON 还是二进制，只在一个地方决定。
+- `main_linux.go` / `napi_linux.c` 里不许出现业务分支（铁律 3）。
+
+**3. 状态分两档**
+
+| 装饰器 | 放哪 | 给什么用 |
+|---|---|---|
+| `@Local` / `@Param` / `@Event` | **组件文件里**，不出文件 | 只有这个组件关心 |
+| `@ObservedV2` + `@Trace` + `AppStorageV2` | `state/` 目录 | 跨组件/跨页面，或被 Ability 写 |
+
+别把只有一处用的 `@Local` 提权成全局 store。全局状态每多一个，「谁在什么时候改了它」
+就难查一分；`state/` 里文件少是正常的，不是缺陷。加进去的判据只有一个：**同一份数据被两个
+以上页面/组件写，或被 Ability 写。**（`AppLife` 就是标准例子：Ability 写、组件读。）
+
+**4. Go 的事件只有一个入口**
+
+`events.ets` 决定哪个 `kind` 交给谁，页面只调一次 `startCoreEvents()`。
+新增一类事件只改订阅方，**不改页面**。（之前 `Index.ets` 里那串 `if (e.kind === …)` 就是
+反例：每加一个事件都得去改那个 367 行的文件。）
+
 ## 五条铁律
 
 1. **`go/core/` 必须保持纯 Go**：不 cgo、不 import 任何 HarmonyOS 相关的包、不认识

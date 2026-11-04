@@ -3,6 +3,42 @@
     {
       "name": "start_window_background",
       "value": "#000000"
+    },
+    {
+      "name": "page_bg",
+      "value": "#0D0E10"
+    },
+    {
+      "name": "text_secondary",
+      "value": "#99FFFFFF"
+    },
+    {
+      "name": "text_hint",
+      "value": "#66FFFFFF"
+    },
+    {
+      "name": "accent",
+      "value": "#6BA1FF"
+    },
+    {
+      "name": "accent_tint",
+      "value": "#336BA1FF"
+    },
+    {
+      "name": "danger",
+      "value": "#FF7A6B"
+    },
+    {
+      "name": "divider",
+      "value": "#1FFFFFFF"
+    },
+    {
+      "name": "hairline",
+      "value": "#1AFFFFFF"
+    },
+    {
+      "name": "surface_dim",
+      "value": "#14FFFFFF"
     }
   ]
 }

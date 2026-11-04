@@ -11,7 +11,7 @@ import { image } from '@kit.ImageKit';
 import { fileIo as fs } from '@kit.CoreFileKit';
 import { photoAccessHelper } from '@kit.MediaLibraryKit';
 import { BusinessError } from '@kit.BasicServicesKit';
-import { AnalyzeResult, FileInfo, gocore, ImageAnalysis } from './GoCore';
+import { AnalyzeResult, FileInfo, gocore, ImageAnalysis } from '../../core/GoCore';
 
 /** Photos are decoded to this on the wide side: 12 MP would only cost time. */
 const ANALYSIS_WIDTH = 320;
@@ -127,7 +127,7 @@ export struct PhotoCard {
               .borderRadius(2)
               .backgroundColor(`rgba(0, 0, 0, ${(a.grid[row * 8 + col] / 100).toFixed(2)})`)
               .borderWidth(0.5)
-              .borderColor('#1A000000')
+              .borderColor($r('app.color.hairline'))
           }, (col: number) => `${row}-${col}`)
         }
       }, (row: number) => `${row}`)
@@ -159,22 +159,22 @@ export struct PhotoCard {
       Row({ space: 12 }) {
         Button('Photo')
           .fontSize(14)
-          .backgroundColor('#1F0A59F7')
-          .fontColor('#0A59F7')
+          .backgroundColor($r('app.color.accent_tint'))
+          .fontColor($r('app.color.accent'))
           .onClick(() => {
             this.fromGallery();
           })
         Button('Camera')
           .fontSize(14)
-          .backgroundColor('#1F0A59F7')
-          .fontColor('#0A59F7')
+          .backgroundColor($r('app.color.accent_tint'))
+          .fontColor($r('app.color.accent'))
           .enabled(!this.busy)
           .onClick(() => {
             this.fromCamera();
           })
         Text(this.status)
           .fontSize(11)
-          .fontColor('#99000000')
+          .fontColor($r('app.color.text_secondary'))
           .layoutWeight(1)
           .maxLines(2)
       }
@@ -197,13 +197,13 @@ export struct PhotoCard {
                     .borderColor('#33000000')
                   Text(`${Math.round(c.share * 100)}%`)
                     .fontSize(10)
-                    .fontColor('#99000000')
+                    .fontColor($r('app.color.text_secondary'))
                 }
               }, (c: ColorShareLike) => c.hex)
             }
             Text(this.fileLine())
               .fontSize(10)
-              .fontColor('#66000000')
+              .fontColor($r('app.color.text_hint'))
               .maxLines(1)
               .textOverflow({ overflow: TextOverflow.Ellipsis })
           }

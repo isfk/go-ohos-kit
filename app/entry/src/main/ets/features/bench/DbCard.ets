@@ -15,7 +15,7 @@
 
 import { relationalStore } from '@kit.ArkData';
 import { systemDateTime } from '@kit.BasicServicesKit';
-import { gocore } from './GoCore';
+import { gocore } from '../../core/GoCore';
 
 const SEED = 20000; // what ../bench/sqlite calls a bulk import
 const PAGE = 2000; // one screenful, the size the README quotes
@@ -140,11 +140,11 @@ export struct DbCard {
       Row({ space: 8 }) {
         Text('SQLite')
           .fontSize(13)
-          .fontColor('#99000000')
+          .fontColor($r('app.color.text_secondary'))
         Blank()
         Text(this.status)
           .fontSize(11)
-          .fontColor('#99000000')
+          .fontColor($r('app.color.text_secondary'))
       }
       .width('100%')
 
@@ -153,22 +153,22 @@ export struct DbCard {
         Button('Go · seed 20k')
           .fontSize(12)
           .height(30)
-          .backgroundColor('#1F0A59F7')
-          .fontColor('#0A59F7')
+          .backgroundColor($r('app.color.accent_tint'))
+          .fontColor($r('app.color.accent'))
           .onClick(() => {
             this.goSeed();
           })
         Button('Go · page 2k')
           .fontSize(12)
           .height(30)
-          .backgroundColor('#1F0A59F7')
-          .fontColor('#0A59F7')
+          .backgroundColor($r('app.color.accent_tint'))
+          .fontColor($r('app.color.accent'))
           .onClick(() => {
             this.goPage();
           })
         Text(this.goSeedLine.length > 0 ? this.goSeedLine : this.goPageLine)
           .fontSize(11)
-          .fontColor('#99000000')
+          .fontColor($r('app.color.text_secondary'))
           .layoutWeight(1)
           .maxLines(2)
       }
@@ -179,22 +179,22 @@ export struct DbCard {
         Button('RDB · seed 20k')
           .fontSize(12)
           .height(30)
-          .backgroundColor('#1F0A59F7')
-          .fontColor('#0A59F7')
+          .backgroundColor($r('app.color.accent_tint'))
+          .fontColor($r('app.color.accent'))
           .onClick(() => {
             this.rdbSeed();
           })
         Button('RDB · page 2k')
           .fontSize(12)
           .height(30)
-          .backgroundColor('#1F0A59F7')
-          .fontColor('#0A59F7')
+          .backgroundColor($r('app.color.accent_tint'))
+          .fontColor($r('app.color.accent'))
           .onClick(() => {
             this.rdbPage();
           })
         Text(this.rdbSeedLine.length > 0 ? this.rdbSeedLine : this.rdbPageLine)
           .fontSize(11)
-          .fontColor('#99000000')
+          .fontColor($r('app.color.text_secondary'))
           .layoutWeight(1)
           .maxLines(2)
       }
@@ -205,13 +205,13 @@ export struct DbCard {
           .fontSize(12)
           .height(30)
           .backgroundColor('#00000000')
-          .fontColor('#E84026')
+          .fontColor($r('app.color.danger'))
           .onClick(() => {
             this.resetBoth();
           })
         Text(`${gocore.dbCount()} rows in the core's file`)
           .fontSize(11)
-          .fontColor('#99000000')
+          .fontColor($r('app.color.text_secondary'))
           .layoutWeight(1)
       }
       .width('100%')
