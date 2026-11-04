@@ -171,7 +171,6 @@ struct Index {
         .padding(16)
         .backgroundColor($r('app.color.surface'))
         .borderRadius(12)
-        .border({ width: 1, color: $r('app.color.hairline') })
 
         // A photo the platform takes and decodes, and the core measures.
         PhotoCard()

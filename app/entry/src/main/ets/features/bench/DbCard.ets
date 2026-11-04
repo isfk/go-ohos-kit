@@ -215,14 +215,13 @@ export struct DbCard {
           .width('100%')
       }
 
-      Divider()
-        .color($r('app.color.divider'))
-        .strokeWidth(1)
-
-      // The platform's file, the same rows, from the other side.
+      // The platform's file, the same rows, from the other side. No rule
+      // between the two: the label already says a new block starts, and a line
+      // on top of the spacing on top of a label is one break said three times.
       Text('Platform store')
         .fontSize(11)
         .fontColor($r('app.color.text_muted'))
+        .padding({ top: 4 })
       Row({ space: 8 }) {
         Button('Seed 20k')
           .type(ButtonType.Normal)
@@ -291,6 +290,5 @@ export struct DbCard {
     .padding(16)
     .backgroundColor($r('app.color.surface'))
     .borderRadius(12)
-    .border({ width: 1, color: $r('app.color.hairline') })
   }
 }

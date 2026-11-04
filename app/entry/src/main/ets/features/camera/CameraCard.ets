@@ -214,7 +214,6 @@ export struct CameraCard {
       .width('100%')
       .aspectRatio(this.aspect)
       .borderRadius(8)
-      .border({ width: 1, color: $r('app.color.hairline') })
       .backgroundColor($r('app.color.surface_raised'))
       .clip(true)
 
@@ -232,6 +231,5 @@ export struct CameraCard {
     .padding(16)
     .backgroundColor($r('app.color.surface'))
     .borderRadius(12)
-    .border({ width: 1, color: $r('app.color.hairline') })
   }
 }

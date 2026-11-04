@@ -133,6 +133,5 @@ export struct MeasureCard {
     .padding(16)
     .backgroundColor($r('app.color.surface'))
     .borderRadius(12)
-    .border({ width: 1, color: $r('app.color.hairline') })
   }
 }
