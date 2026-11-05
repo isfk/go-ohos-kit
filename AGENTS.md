@@ -134,6 +134,11 @@ Go 内核         ← go/core：状态、逻辑、IO；goroutine 随便开
 - `aboutToDisappear` 抓不到 Home 键，后台处理要接 ability 的 `onBackground`（`AppStorage`）。
 - 鸿蒙里环境变量是空的（空 argv/envp 补丁），沙箱路径必须从 ArkTS 传进 Go。
 - 大块数据别用 JSON，用 `ArrayBuffer` + 按需解码（2000 行这个量级 JSON 完全够用，别优化错方向）。
+- **列表事件的 `todos` 字段不能 `omitempty`**（真机上踩过）：“删掉最后一行”时列表是空的，
+  `omitempty` 把整个字段省掉，发出去就是 `{"kind":"todos"}`——UI 把“回包没有列表”
+  当成存档失败（曾经的错误对象就长这样），于是行删了却弹一行红字。`core.go` 的
+  `todosJSON()` 现在是唯一的列表线格式出口：永远带 `todos`，nil 也要先规范成 `[]`（否则是 `null`）。
+  `TestAnEmptyListStillSendsTheField` 钉住了这个形状。
 - 像素缓冲**按行对齐**：`stride` 不等于 `width*4`，当紧排处理会把画面斜切。
 - 12 MP 全量算像素要 ~300 ms；先缩到 320 宽（约 3.5 ms），结论一样。
 - **后台 = 长时任务**：`KEEP_BACKGROUND_RUNNING` 权限 + ability 的 `backgroundModes` +

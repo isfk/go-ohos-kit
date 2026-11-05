@@ -252,9 +252,6 @@ func dbJSON(op string, rows int, took time.Duration) *C.char {
 	return C.CString(string(out))
 }
 
-// gokit_db_open opens (or creates) the app's database under filesDir. It is
-// idempotent: the UI may call it on every page show.
-//
 // openDatabase opens (or creates) the core's SQLite file under dir, and imports
 // the JSON list the first version wrote — once. The import renames the old file
 // out of the way instead of reading it forever: an empty list is a legitimate
@@ -289,6 +286,10 @@ func openDatabase(dir string) (*gostore.Store, error) {
 	return db, nil
 }
 
+// gokit_db_open opens (or creates) the app's database under filesDir. It is
+// idempotent: the UI may call it on every page show, and the second call just
+// says where the first one put the file.
+//
 //export gokit_db_open
 func gokit_db_open(filesDir *C.char) *C.char {
 	dir := C.GoString(filesDir)
