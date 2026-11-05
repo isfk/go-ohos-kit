@@ -108,11 +108,7 @@ func gokit_remaining() C.int { return C.int(store.Remaining()) }
 //
 //export gokit_inspect
 func gokit_inspect(fd C.int, name *C.char) *C.char {
-	f := os.NewFile(uintptr(fd), C.GoString(name))
-	if f == nil {
-		return errorJSON("bad descriptor")
-	}
-	info, err := core.Inspect(f, C.GoString(name))
+	info, err := core.InspectFD(int(fd), C.GoString(name))
 	if err != nil {
 		return errorJSON(err.Error())
 	}

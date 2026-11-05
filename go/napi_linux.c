@@ -19,6 +19,7 @@
 #include <napi/native_api.h>
 #include <hilog/log.h>
 
+#include <pthread.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -54,18 +55,18 @@ extern char *gokit_db_reset(void);
 
 // The function JavaScript gave to listen(), and the channel to it.
 static napi_threadsafe_function emitFn;
+static pthread_mutex_t emitMu = PTHREAD_MUTEX_INITIALIZER;
 
 // gokit_emit is Go's way out: called from any goroutine, with a string it
 // made and this side frees.
 void gokit_emit(const char *json) {
     if (!json) return;
-    if (!emitFn) {
-        free((void *)json);
-        return;
-    }
-    if (napi_call_threadsafe_function(emitFn, (void *)json, napi_tsfn_nonblocking) != napi_ok) {
-        free((void *)json); // the UI stopped listening
-    }
+    pthread_mutex_lock(&emitMu);
+    napi_status status = emitFn ? napi_call_threadsafe_function(emitFn, (void *)json,
+                                                                 napi_tsfn_nonblocking)
+                                : napi_closing;
+    pthread_mutex_unlock(&emitMu);
+    if (status != napi_ok) free((void *)json); // the UI stopped listening
 }
 
 // emitCB runs on the main thread: JavaScript's turn.
@@ -117,6 +118,7 @@ static napi_value Listen(napi_env env, napi_callback_info info) {
         napi_throw_type_error(env, NULL, "listen(fn): fn must be a function");
         return NULL;
     }
+    pthread_mutex_lock(&emitMu);
     if (emitFn) {
         napi_release_threadsafe_function(emitFn, napi_tsfn_release);
         emitFn = NULL;
@@ -128,6 +130,7 @@ static napi_value Listen(napi_env env, napi_callback_info info) {
         loge("listen: no threadsafe function");
         emitFn = NULL;
     }
+    pthread_mutex_unlock(&emitMu);
     return NULL;
 }
 

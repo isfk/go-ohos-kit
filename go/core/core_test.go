@@ -2,8 +2,12 @@ package core
 
 import (
 	"bytes"
+	"os"
+	"runtime"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 )
 
 func TestAddToggleRemove(t *testing.T) {
@@ -33,6 +37,32 @@ func TestAddEmptyIsNothing(t *testing.T) {
 	s.Add("")
 	if len(s.todos) != 0 {
 		t.Fatal("an empty title made a todo")
+	}
+}
+
+func TestInspectFDDoesNotCloseHostDescriptor(t *testing.T) {
+	file, err := os.CreateTemp(t.TempDir(), "photo")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer file.Close()
+	if _, err := file.Write([]byte("host still owns this fd")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := file.Seek(0, 0); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := InspectFD(int(file.Fd()), "photo"); err != nil {
+		t.Fatal(err)
+	}
+	runtime.GC()
+	if _, err := file.Seek(0, 0); err != nil {
+		t.Fatalf("host descriptor was closed: %v", err)
+	}
+	buf := make([]byte, 4)
+	if _, err := file.Read(buf); err != nil || string(buf) != "host" {
+		t.Fatalf("host descriptor read %q, %v", buf, err)
 	}
 }
 
@@ -115,6 +145,71 @@ func (f *fakePersister) Load() ([]Todo, error) { return f.loaded, nil }
 func (f *fakePersister) Save(todos []Todo) error {
 	f.saved = append(f.saved, append([]Todo(nil), todos...))
 	return nil
+}
+
+// blockingPersister pauses the first write, exposing out-of-order persistence.
+type blockingPersister struct {
+	mu      sync.Mutex
+	entered chan struct{}
+	release chan struct{}
+	writes  [][]Todo
+}
+
+func (p *blockingPersister) Load() ([]Todo, error) { return nil, nil }
+func (p *blockingPersister) Save(todos []Todo) error {
+	p.mu.Lock()
+	first := len(p.writes) == 0
+	p.mu.Unlock()
+	if first {
+		select {
+		case <-p.entered:
+		default:
+			close(p.entered)
+		}
+		<-p.release
+	}
+	p.mu.Lock()
+	p.writes = append(p.writes, append([]Todo(nil), todos...))
+	p.mu.Unlock()
+	return nil
+}
+
+func TestConcurrentMutationsPersistInOrder(t *testing.T) {
+	p := &blockingPersister{entered: make(chan struct{}), release: make(chan struct{})}
+	s := New()
+	s.SetPersister(p)
+	first := make(chan struct{})
+	go func() { s.Add("first"); close(first) }()
+	select {
+	case <-p.entered:
+	case <-time.After(2 * time.Second):
+		close(p.release)
+		t.Fatal("first save never started")
+	}
+	second := make(chan struct{})
+	go func() { s.Add("second"); close(second) }()
+	// The second mutation must wait for the first save to finish.
+	select {
+	case <-second:
+		t.Error("second mutation finished before the first save")
+	case <-time.After(50 * time.Millisecond):
+	}
+	close(p.release)
+	select {
+	case <-first:
+	case <-time.After(2 * time.Second):
+		t.Fatal("first mutation hung")
+	}
+	select {
+	case <-second:
+	case <-time.After(2 * time.Second):
+		t.Fatal("second mutation hung")
+	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if len(p.writes) != 2 || len(p.writes[0]) != 1 || len(p.writes[1]) != 2 || p.writes[1][1].Title != "second" {
+		t.Fatalf("out-of-order writes: %+v", p.writes)
+	}
 }
 
 func TestTheListComesFromAndGoesToThePersister(t *testing.T) {

@@ -10,6 +10,7 @@ import (
 	"io"
 	"os"
 	"sync"
+	"syscall"
 	"time"
 )
 
@@ -43,6 +44,20 @@ type FileInfo struct {
 // Inspect reads a file and reports what it is: its size, its format (from its
 // magic bytes), and its SHA-256. Plain io.Reader: the bridge hands it a file
 // descriptor the system opened, and a test hands it a buffer.
+func InspectFD(fd int, name string) (FileInfo, error) {
+	ownedFD, err := syscall.Dup(fd)
+	if err != nil {
+		return FileInfo{}, err
+	}
+	f := os.NewFile(uintptr(ownedFD), name)
+	if f == nil {
+		_ = syscall.Close(ownedFD)
+		return FileInfo{}, os.ErrInvalid
+	}
+	defer f.Close()
+	return Inspect(f, name)
+}
+
 func Inspect(r io.Reader, name string) (FileInfo, error) {
 	h := sha256.New()
 	buf := make([]byte, 64<<10)
@@ -220,14 +235,15 @@ func (p FilePersister) Save(todos []Todo) error {
 // Store is the app's state. Every method is safe from any goroutine: the UI
 // calls it on its main thread, and the heartbeat calls it from its own.
 type Store struct {
-	mu      sync.Mutex
-	todos   []Todo
-	next    int
-	persist Persister     // where the list goes; nil: nowhere
-	emit    func(string)  // tells the UI; nil until the host sets one
-	stop    chan struct{} // the heartbeat's
-	fg      bool          // in the foreground (the heartbeat only ticks then)
-	level   *Level        // the accelerometer's, made on first use
+	mutationMu sync.Mutex
+	mu         sync.Mutex
+	todos      []Todo
+	next       int
+	persist    Persister     // where the list goes; nil: nowhere
+	emit       func(string)  // tells the UI; nil until the host sets one
+	stop       chan struct{} // the heartbeat's
+	fg         bool          // in the foreground (the heartbeat only ticks then)
+	level      *Level        // the accelerometer's, made on first use
 	// levelPush is when the level last went to the UI: the sensor calls 50
 	// times a second, the screen refreshes 60, and the bridge doesn't need
 	// every sample.
@@ -301,6 +317,8 @@ func (s *Store) Snapshot() string {
 
 // Add makes a todo. It returns the list, as every change does.
 func (s *Store) Add(title string) string {
+	s.mutationMu.Lock()
+	defer s.mutationMu.Unlock()
 	if title == "" {
 		return s.Snapshot()
 	}
@@ -315,6 +333,8 @@ func (s *Store) Add(title string) string {
 
 // Toggle turns a todo done, or not.
 func (s *Store) Toggle(id int) string {
+	s.mutationMu.Lock()
+	defer s.mutationMu.Unlock()
 	s.mu.Lock()
 	for i := range s.todos {
 		if s.todos[i].ID == id {
@@ -330,6 +350,8 @@ func (s *Store) Toggle(id int) string {
 
 // Remove drops a todo.
 func (s *Store) Remove(id int) string {
+	s.mutationMu.Lock()
+	defer s.mutationMu.Unlock()
 	s.mu.Lock()
 	for i := range s.todos {
 		if s.todos[i].ID == id {
@@ -409,6 +431,8 @@ func (s *Store) SetForeground(on bool) {
 // Start reads the list and starts the heartbeat: a goroutine of the core's
 // own, which the UI hears about through Listen.
 func (s *Store) Start() {
+	s.mutationMu.Lock()
+	defer s.mutationMu.Unlock()
 	s.load()
 	s.changed()
 	s.mu.Lock()
@@ -445,6 +469,8 @@ func (s *Store) Start() {
 
 // Stop ends the heartbeat.
 func (s *Store) Stop() {
+	s.mutationMu.Lock()
+	defer s.mutationMu.Unlock()
 	s.mu.Lock()
 	stop := s.stop
 	s.stop = nil

@@ -7,7 +7,7 @@ Go 负责领域逻辑、状态、网络、SQLite、加解密、后台任务；�
 > **对照组** · 实验组：[isfk/rust-ohos-kit](https://github.com/isfk/rust-ohos-kit)
 > 同一个 ArkTS 外壳、同样的八块面板，内核换成 Rust：**0 个 runtime 补丁**，产物 2.7 MB（这里 11 MB）。
 > 那边唯一更贵的是"纯度"—— 它得把 SQLite 的 C 编进产物，这里用纯 Go 驱动、内核零 C 依赖；
-> 代价是同样的 20k 行 seed 59.3 ms vs 12.3 ms。补丁逐条对照、桥读数、体积表见[那边的 CONTEXT.md](https://github.com/isfk/rust-ohos-kit/blob/main/CONTEXT.md)。
+> 代价是同样的 20k 行 seed 59.3 ms vs 12.3 ms。Go 侧有 **3 处 runtime 行为修补 + 1 个符号声明文件**（共 4 个 overlay 文件）；逐条对照、桥读数、体积表见[那边的 CONTEXT.md](https://github.com/isfk/rust-ohos-kit/blob/main/CONTEXT.md)。
 >
 > 语言、生态、踩过的坑、什么时候选哪个：[**Go vs Rust，在 HarmonyOS 上**](docs/go-vs-rust.md)。
 
@@ -114,9 +114,9 @@ platform/ohos/
 
 scripts/
   check.sh                  一套命令跑完：test / vet / 补丁 / 交叉编译 / TLS 断言
-  check-runtime.sh          只查三个补丁（Go 升级后跑）＝ tools/patch check 的壳
+  check-runtime.sh          检查 3 处 runtime 修补 + 1 个符号声明（Go 升级后跑）＝ tools/patch check 的壳
 
-tools/patch/                Go 写的小工具，看着这三个补丁（自带 module + 测试）
+tools/patch/                Go 写的小工具，检查这 4 个 overlay 文件（自带 module + 测试）
   main.go                  check / overlay / verify 三个子命令
   patches.go               补丁表：替换谁、为什么、标记、要盯的上游锚点
 
@@ -487,8 +487,9 @@ Go**。进程活着 = Go 活着；进程被冻结 = Go 一起停。别指望一�
 | `fatal error: failed to get system page size` → 进程 exit(2) | musl 调库构造函数**不传 argc/argv**，Go 把寄存器垃圾当 argv/envp/auxv | `runtime/rt0_linux_arm64.s`：库模式给一个空的 argv/envp |
 | 同上（auxv 读不到时的兜底） | app 沙箱里 `/proc/self/auxv` 读不出来 | `runtime/os_linux.go`：`physPageSize==0` 时用 `mincore` 探针 |
 
-`build.sh` 用 `go build -overlay` 把它们换掉，**不动你机器上的 Go**。overlay 的清单和
-这些检查都由 `tools/patch` 一处给出（`build.sh` 调它生成 overlay，不再自己抄一份文件名）。
+`build.sh` 用 `go build -overlay` 把三处运行时实现换掉，另注入 `runtime/gokit_ohos.go`
+的两个符号声明，**不动你机器上的 Go**。因此修补行为是 3 处，overlay 文件共 4 个。
+overlay 的清单和这些检查都由 `tools/patch` 一处给出（`build.sh` 调它生成 overlay，不再自己抄一份文件名）。
 
 它盯三件事，都是「升级 Go 之后会静默坏掉」的那种：
 
