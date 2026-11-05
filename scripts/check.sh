@@ -33,6 +33,51 @@ echo "== go vet =="
 echo "== runtime patches =="
 "$here/check-runtime.sh"
 
+echo "== ArkTS shell, against the sibling =="
+# The shell is this experiment's control variable: the same behaviour has to run
+# on both cores, so a fix that lands on one side has to land on the other. It
+# drifted once already (the strict todo-mutation path, the composer's return
+# value, the todo error banner existed only in the Rust fork) and nothing
+# noticed until it was found by hand.
+#
+# Four files carry that behaviour; the rest of the shell is per-feature text,
+# colour and layout, which is allowed to differ. Both copies are normalised to
+# the same neutral names first (rustcore and gocore both become "gocore", both
+# languages become "LANG"), then required to match byte for byte.
+normalise() {
+	sed -e 's/librustcore\.so/libgocore.so/g' \
+		-e 's#types/librustcore#types/libgocore#g' \
+		-e 's/RustCore/GoCore/g' \
+		-e 's/rustcore/gocore/g' \
+		-e 's/RustKit/GoKit/g' \
+		-e 's/Rust/LANG/g' \
+		-e 's/Go/LANG/g' "$1"
+}
+sib=../rust-ohos-kit/app/entry/src/main/ets
+if [ -d "$sib" ]; then
+	shell_tmp=$(mktemp -d)
+	for pair in \
+		core/GoCore.ts:core/RustCore.ts \
+		core/events.ets:core/events.ets \
+		features/todos/TodoComposer.ets:features/todos/TodoComposer.ets \
+		pages/Index.ets:pages/Index.ets; do
+		here_file=${pair%%:*}
+		there_file=${pair##*:}
+		normalise "app/entry/src/main/ets/$here_file" >"$shell_tmp/mine.ets"
+		normalise "$sib/$there_file" >"$shell_tmp/theirs.ets"
+		if ! cmp -s "$shell_tmp/mine.ets" "$shell_tmp/theirs.ets"; then
+			echo "$here_file drifted from $there_file — change both, or neither:" >&2
+			diff "$shell_tmp/mine.ets" "$shell_tmp/theirs.ets" | head -20 >&2
+			rm -rf "$shell_tmp"
+			exit 1
+		fi
+	done
+	rm -rf "$shell_tmp"
+	echo "4 behaviour files match (names normalised)"
+else
+	echo "no sibling checkout: skipped"
+fi
+
 echo "== shared conclusions page =="
 # docs/go-vs-rust.md exists in ../rust-ohos-kit too, byte for byte the same, so
 # that either repository reads correctly on its own. Two copies drift, so when the
