@@ -102,7 +102,23 @@ func cmdCheck(args []string) error {
 		fmt.Printf("note: patches were taken from %q, this Go is %s\n", v, g["GOVERSION"])
 	}
 
-	// 2. Every patch still carries its markers, and still has something to hook.
+	// 2. The same fact, in the other file that states it. `go/go.mod` names the
+	//    release the patches were taken from as the module's floor, so a toolchain
+	//    older than the sources cannot quietly overlay the patches onto something
+	//    else. Two files, so they get compared: this pair drifted once (VERSION
+	//    said 1.27.3, go.mod said 1.26.0) and nothing said a word.
+	if err == nil {
+		wanted := strings.TrimPrefix(versionLine(string(want)), "go")
+		mod, readErr := os.ReadFile(filepath.Join(r, "go/go.mod"))
+		if readErr != nil {
+			warn("cannot read go/go.mod: %v", readErr)
+		} else if got := goDirective(string(mod)); got != wanted {
+			warn("go/go.mod's go directive is %q, but the patches were taken from go%s: "+
+				"the floor and the patched sources are the same fact", got, wanted)
+		}
+	}
+
+	// 3. Every patch still carries its markers, and still has something to hook.
 	for _, p := range patches {
 		ours := filepath.Join(r, "platform/ohos/runtime", p.file)
 		body, err := os.ReadFile(ours)
@@ -131,7 +147,7 @@ func cmdCheck(args []string) error {
 		}
 	}
 
-	// 3. The build script must take its overlay from here, or what it builds
+	// 4. The build script must take its overlay from here, or what it builds
 	//    isn't what this checked: the patches are only real if they're used.
 	build, err := os.ReadFile(filepath.Join(r, "platform/ohos/build.sh"))
 	if err != nil {
@@ -333,6 +349,18 @@ func versionLine(file string) string {
 		if len(line) > 2 && strings.HasPrefix(line, "go") && !strings.ContainsRune(line, ' ') &&
 			!strings.Contains(line, "#") {
 			return line
+		}
+	}
+	return ""
+}
+
+// goDirective is the `go` line of a go.mod file: the minimum toolchain that
+// module allows. Comments above it are prose, and a `toolchain` line is advice
+// rather than a floor, so neither counts.
+func goDirective(mod string) string {
+	for _, line := range strings.Split(mod, "\n") {
+		if rest, ok := strings.CutPrefix(strings.TrimSpace(line), "go "); ok {
+			return strings.TrimSpace(rest)
 		}
 	}
 	return ""

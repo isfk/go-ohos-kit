@@ -25,6 +25,29 @@ go1.27.3
 	}
 }
 
+func TestGoDirectiveReadsPastTheComments(t *testing.T) {
+	// What go/go.mod actually looks like: the reason, then the floor. The comment
+	// is prose, and a `toolchain` line is advice rather than a floor — neither is
+	// the answer to "which Go do the patches need?".
+	mod := `module gokit
+
+// The 1.27.3 is not decoration: platform/ohos/runtime/ holds sources taken from
+// exactly that release, and the patches are anchored to lines inside them.
+go 1.27.3
+
+require modernc.org/sqlite v1.61.1
+`
+	if got := goDirective(mod); got != "1.27.3" {
+		t.Errorf("goDirective = %q, want 1.27.3", got)
+	}
+	if got := goDirective("go 1.27\ntoolchain go1.28.0\n"); got != "1.27" {
+		t.Errorf("goDirective = %q, want 1.27", got)
+	}
+	if got := goDirective("module x\n"); got != "" {
+		t.Errorf("goDirective = %q, want empty", got)
+	}
+}
+
 func TestOverlayMapsEveryPatchToTheRuntime(t *testing.T) {
 	b, err := overlayJSON("/goroot", "/repo")
 	if err != nil {

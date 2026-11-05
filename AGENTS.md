@@ -72,6 +72,12 @@ Go 内核         ← go/core：状态、逻辑、IO；goroutine 随便开
    这才是升级 Go 时真正会坏的东西（编译不会有任何意见）。补丁清单只在
    `tools/patch/patches.go` 一处，`build.sh` 的 overlay 由工具生成，别再手抄。
 
+   **`platform/ohos/runtime/VERSION` 和 `go/go.mod` 的 `go` 指令是同一件事**：前者说
+   “这些源码取自哪个 release”，后者说“这个模块至少需要哪个 release”。升级 Go 时两个一起
+   改，`tools/patch check` 现在会把它们对一遍 —— 曾经一个写 1.27.3、一个写 1.26.0，然后
+   什么也没发生（`go build` 照过，`check` 只打一行 `note:`）。想换一个更硬的检查？
+   下一步是让 `check` 在版本不一致时直接失败，现在的取舍写在 `cmdCheck` 里。
+
    已决定**不往 Go 上游提这三个补丁**（2026-11 讨论）：它们碰的是
    `-buildmode=c-shared` + musl 的坑，而 OpenHarmony 不是 Go 的 GOOS；要能提，唯一
    卖点是把复现搬成「Alpine 上 dlopen Go 库」，成本高、`os_linux.go` 那 34 行还要证明
