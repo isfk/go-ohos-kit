@@ -4,7 +4,7 @@
 // camera, the sensor with the level, each measurement with its own card.
 //
 // The rules this follows are in AGENTS.md ("边界"): state stays in the component
-// that uses it, a Go event has exactly one entry point, and nothing here talks to
+// that uses it, a core event has exactly one entry point, and nothing here talks to
 // libgocore.so directly.
 //
 // Visually it is one column of panels on a 4px rhythm: 16 between panels, 12
@@ -30,6 +30,7 @@ import { TodoList } from '../features/todos/TodoList';
 struct Index {
   /** The list: this page owns it, and only this page writes it. */
   @Local todos: Todo[] = [];
+  @Local todoError: string = '';
   /** Is the page on screen? What the accelerometer uses to decide whether to run. */
   @Local active: boolean = false;
   /**
@@ -85,16 +86,33 @@ struct Index {
 
   // The core answers with the list after each change, so there is nothing to
   // re-read and no second source of truth.
-  private add(title: string): void {
-    this.todos = gocore.add(title);
+  private add(title: string): boolean {
+    try {
+      this.todos = gocore.add(title);
+      this.todoError = '';
+      return true;
+    } catch (err) {
+      this.todoError = `${err}`;
+      return false;
+    }
   }
 
   private toggle(id: number): void {
-    this.todos = gocore.toggle(id);
+    try {
+      this.todos = gocore.toggle(id);
+      this.todoError = '';
+    } catch (err) {
+      this.todoError = `${err}`;
+    }
   }
 
   private remove(id: number): void {
-    this.todos = gocore.remove(id);
+    try {
+      this.todos = gocore.remove(id);
+      this.todoError = '';
+    } catch (err) {
+      this.todoError = `${err}`;
+    }
   }
 
   /** The panel's own count. It is page chrome now, so the page counts it. */
@@ -151,10 +169,16 @@ struct Index {
           .alignItems(VerticalAlign.Center)
 
           TodoComposer({
-            onAdd: (title: string): void => {
-              this.add(title);
+            onAdd: (title: string): boolean => {
+              return this.add(title);
             },
           })
+
+          if (this.todoError.length > 0) {
+            Text(this.todoError)
+              .fontSize(12)
+              .fontColor($r('app.color.danger'))
+          }
 
           TodoList({
             todos: this.todos,
@@ -179,7 +203,7 @@ struct Index {
         // you've walked since the first fix.
         LocationCard()
 
-        // A platform callback at 50 Hz, into Go, and back out smoothed.
+        // A platform callback at 50 Hz, into the core, and back out smoothed.
         LevelRow({ active: this.active })
 
         // A runtime permission, a native surface, and a session to tear down.

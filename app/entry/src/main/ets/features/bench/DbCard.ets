@@ -165,6 +165,10 @@ export struct DbCard {
         Text(this.status)
           .fontSize(12)
           .fontColor($r('app.color.text_muted'))
+          .layoutWeight(1)
+          .maxLines(2)
+          .textAlign(TextAlign.End)
+          .textOverflow({ overflow: TextOverflow.Ellipsis })
       }
       .width('100%')
       .alignItems(VerticalAlign.Center)
@@ -277,7 +281,9 @@ export struct DbCard {
             this.resetBoth();
           })
         Blank()
-        Text(`${this.coreRows} rows in the core's file`)
+        // "bench rows": the file also holds the app's own list, and this number
+        // was only ever the 20k comparison table.
+        Text(`${this.coreRows} bench rows in the core's file`)
           .fontSize(12)
           .fontColor($r('app.color.text_muted'))
           .fontFeature('"tnum" 1')
