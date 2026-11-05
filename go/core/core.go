@@ -8,6 +8,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"io"
+	"math"
 	"os"
 	"sync"
 	"syscall"
@@ -41,9 +42,16 @@ type FileInfo struct {
 	SHA256 string `json:"sha256"`
 }
 
-// Inspect reads a file and reports what it is: its size, its format (from its
-// magic bytes), and its SHA-256. Plain io.Reader: the bridge hands it a file
-// descriptor the system opened, and a test hands it a buffer.
+// InspectFD reads a file the system opened for the UI (a photo from the picker,
+// say) and reports what it is.
+//
+// Two things about that descriptor, and both are load-bearing. It is closed here,
+// which is why it is duped first: os.NewFile + Close would otherwise take the
+// caller's descriptor with it. And its offset is *not* moved, which is why the
+// reads go through a SectionReader: ArkTS hands the same descriptor to the image
+// decoder a line after it asks us what the file is, and a dup does not help there
+// — it is a second handle on one open file description, so reading through it
+// walks the original to EOF too.
 func InspectFD(fd int, name string) (FileInfo, error) {
 	ownedFD, err := syscall.Dup(fd)
 	if err != nil {
@@ -55,8 +63,14 @@ func InspectFD(fd int, name string) (FileInfo, error) {
 		return FileInfo{}, os.ErrInvalid
 	}
 	defer f.Close()
-	return Inspect(f, name)
+	// SectionReader reads with ReadAt (pread): the hash covers the whole file even
+	// if the caller had already read part of it, and the caller's offset is
+	// exactly where it left it.
+	return Inspect(io.NewSectionReader(f, 0, math.MaxInt64), name)
 }
+
+// Inspect is the arithmetic above, over any io.Reader: a descriptor the system
+// opened, or a buffer in a test.
 
 func Inspect(r io.Reader, name string) (FileInfo, error) {
 	h := sha256.New()

@@ -2,6 +2,7 @@ package core
 
 import (
 	"bytes"
+	"io"
 	"os"
 	"runtime"
 	"strings"
@@ -61,24 +62,43 @@ func TestAnEmptyListStillSendsTheField(t *testing.T) {
 	}
 }
 
-func TestInspectFDDoesNotCloseHostDescriptor(t *testing.T) {
+// The descriptor ArkTS hands over is on loan: closed here would take the caller's
+// with it, and walked to EOF would leave the image decoder that reads it next
+// with nothing. Both properties, one test.
+func TestInspectFDLeavesTheHostDescriptorAlone(t *testing.T) {
+	const content = "host still owns this fd"
 	file, err := os.CreateTemp(t.TempDir(), "photo")
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer file.Close()
-	if _, err := file.Write([]byte("host still owns this fd")); err != nil {
+	if _, err := file.Write([]byte(content)); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := file.Seek(0, 0); err != nil {
+	// Park the host's offset inside the file: an implementation that reads through
+	// the handle would start there, and one that shares the offset would end up at
+	// EOF.
+	if _, err := file.Seek(1, io.SeekStart); err != nil {
 		t.Fatal(err)
 	}
 
-	if _, err := InspectFD(int(file.Fd()), "photo"); err != nil {
+	got, err := InspectFD(int(file.Fd()), "photo")
+	if err != nil {
 		t.Fatal(err)
 	}
+	want, err := Inspect(strings.NewReader(content), "photo")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != want {
+		t.Fatalf("InspectFD = %+v, want %+v (it read from the offset, not from the start)", got, want)
+	}
+	if pos, err := file.Seek(0, io.SeekCurrent); err != nil || pos != 1 {
+		t.Fatalf("the host's offset moved to %d, %v", pos, err)
+	}
+
 	runtime.GC()
-	if _, err := file.Seek(0, 0); err != nil {
+	if _, err := file.Seek(0, io.SeekStart); err != nil {
 		t.Fatalf("host descriptor was closed: %v", err)
 	}
 	buf := make([]byte, 4)
