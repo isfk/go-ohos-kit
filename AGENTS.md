@@ -145,6 +145,10 @@ Go 内核         ← go/core：状态、逻辑、IO；goroutine 随便开
   当成存档失败（曾经的错误对象就长这样），于是行删了却弹一行红字。`core.go` 的
   `todosJSON()` 现在是唯一的列表线格式出口：永远带 `todos`，nil 也要先规范成 `[]`（否则是 `null`）。
   `TestAnEmptyListStillSendsTheField` 钉住了这个形状。
+- **`hilog -T gokit` 不只装我们的日志**。`log_linux.c` 是**进程级**的 fd 1/2 重定向，
+  进程里任何 C/C++ 库往 stderr 打的东西都会挂上 `gokit`。实例：真机上分析一张 JPEG 时
+  出现 `gokit: current ifd->count 13` —— 那是系统解码器的 EXIF 调试输出（`grep -rn ifd go/`
+  是空的），不是核在说话。读日志时先分辨“这句像人写的吗”。
 - **借来的 fd：`dup` 保不住偏移量**。fd 的偏移量属于 open file description，而 `dup` 拿到的是
   **同一个** description —— ArkTS 让我们 inspect 一个 fd，紧接着又拿同一个 fd 去
   `createImageSource`。所以 `InspectFD` 里的 `dup` 只为“有权关掉它”，读走的是
