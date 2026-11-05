@@ -312,7 +312,32 @@ func (s *Store) Snapshot() string {
 	s.mu.Lock()
 	todos := append([]Todo(nil), s.todos...)
 	s.mu.Unlock()
-	return encode(Event{Kind: "todos", Todos: todos})
+	return todosJSON(todos)
+}
+
+// todosJSON is the list event, and the only place the list's wire shape is
+// written down.
+//
+// `Todos` has no `omitempty`, unlike Event's: an empty list has to travel as
+// `"todos":[]` rather than as a missing field. The UI treats a mutation reply
+// without a list as a failed save — that is what the error object looks like — so
+// dropping the field turned "deleted my last row" into an error banner on the
+// device (found by the ArkTS shell both repos now share; the Rust core always
+// sent the empty array, so the two kernels now agree on the wire).
+func todosJSON(todos []Todo) string {
+	// A nil slice marshals to `null`, and `null` is not a list: normalise first,
+	// so the field is an array whether it is empty or not.
+	if todos == nil {
+		todos = []Todo{}
+	}
+	data, err := json.Marshal(struct {
+		Kind  string `json:"kind"`
+		Todos []Todo `json:"todos"`
+	}{"todos", todos})
+	if err != nil {
+		return `{"kind":"text","text":"encode error"}`
+	}
+	return string(data)
 }
 
 // Add makes a todo. It returns the list, as every change does.
@@ -485,16 +510,21 @@ func (s *Store) changed() {
 	s.mu.Lock()
 	todos := append([]Todo(nil), s.todos...)
 	s.mu.Unlock()
-	s.push(Event{Kind: "todos", Todos: todos})
+	s.emitJSON(todosJSON(todos))
 }
 
 // push sends an event to the UI, if there's one listening.
 func (s *Store) push(e Event) {
+	s.emitJSON(encode(e))
+}
+
+// emitJSON hands an already-encoded event to the UI.
+func (s *Store) emitJSON(json string) {
 	s.mu.Lock()
 	emit := s.emit
 	s.mu.Unlock()
 	if emit != nil {
-		emit(encode(e))
+		emit(json)
 	}
 }
 

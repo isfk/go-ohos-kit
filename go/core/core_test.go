@@ -40,6 +40,27 @@ func TestAddEmptyIsNothing(t *testing.T) {
 	}
 }
 
+// An empty list still has to name the field. The UI's mutation path reads a
+// reply without `todos` as a failed save (that is what the old error object
+// looked like), so `omitempty` here turned "deleted my last row" into an error
+// banner on a device. The Rust core sends `"todos":[]`, so this is also what
+// keeps the two kernels' wire format the same.
+func TestAnEmptyListStillSendsTheField(t *testing.T) {
+	s := New()
+	if got := s.Snapshot(); got != `{"kind":"todos","todos":[]}` {
+		t.Fatalf("snapshot: %s", got)
+	}
+
+	var events []string
+	s.Listen(func(json string) { events = append(events, json) })
+	s.Add("only row")
+	s.Remove(1)
+	last := events[len(events)-1]
+	if last != `{"kind":"todos","todos":[]}` {
+		t.Fatalf("the event after removing the last row: %s", last)
+	}
+}
+
 func TestInspectFDDoesNotCloseHostDescriptor(t *testing.T) {
 	file, err := os.CreateTemp(t.TempDir(), "photo")
 	if err != nil {
