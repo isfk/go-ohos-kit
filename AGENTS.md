@@ -145,6 +145,11 @@ Go 内核         ← go/core：状态、逻辑、IO；goroutine 随便开
   当成存档失败（曾经的错误对象就长这样），于是行删了却弹一行红字。`core.go` 的
   `todosJSON()` 现在是唯一的列表线格式出口：永远带 `todos`，nil 也要先规范成 `[]`（否则是 `null`）。
   `TestAnEmptyListStillSendsTheField` 钉住了这个形状。
+- **借来的 fd：`dup` 保不住偏移量**。fd 的偏移量属于 open file description，而 `dup` 拿到的是
+  **同一个** description —— ArkTS 让我们 inspect 一个 fd，紧接着又拿同一个 fd 去
+  `createImageSource`。所以 `InspectFD` 里的 `dup` 只为“有权关掉它”，读走的是
+  `io.NewSectionReader`（`ReadAt`/pread），偏移量一点不动，hash 也覆盖整个文件。
+  **别把它改回 `f.Read`**：今天不炸只是因为解码器自己 seek 回了 0。Rust 侧同理（`pread`）。
 - 像素缓冲**按行对齐**：`stride` 不等于 `width*4`，当紧排处理会把画面斜切。
 - 12 MP 全量算像素要 ~300 ms；先缩到 320 宽（约 3.5 ms），结论一样。
 - **后台 = 长时任务**：`KEEP_BACKGROUND_RUNNING` 权限 + ability 的 `backgroundModes` +
