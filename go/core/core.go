@@ -7,6 +7,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"io"
 	"math"
 	"os"
@@ -318,7 +319,13 @@ func (s *Store) save() {
 	if p == nil {
 		return
 	}
-	_ = p.Save(list)
+	// Still not fatal — the UI has already been told and a failed write is not
+	// something it could act on — but not silent either: the log is the only copy
+	// that survives the screen, and "the list did not come back" is the report
+	// this line answers. `log_linux.c` puts it in hilog under the gokit tag.
+	if err := p.Save(list); err != nil {
+		fmt.Println("gokit: could not save the list:", err)
+	}
 }
 
 // Snapshot is the list, as the UI takes it.
