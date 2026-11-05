@@ -1,6 +1,11 @@
 module gokit
 
-go 1.26.0
+// The 1.27.3 is not decoration: platform/ohos/runtime/ holds sources taken from
+// exactly that release, and the patches are anchored to lines inside them. An
+// older toolchain builds happily against different GOROOT source and the pin
+// check would only warn — so the version the patches were made for is the
+// version this module requires.
+go 1.27.3
 
 require modernc.org/sqlite v1.61.1
 
