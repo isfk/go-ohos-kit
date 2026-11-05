@@ -2,7 +2,7 @@
 # Makes a new app: a Go core and the HarmonyOS project around it, both copies
 # of the kit's (which stay the reference when they drift).
 #
-#   platform/ohos/new.sh <name> [dir] [--bundle id] [--label "My App"]
+#   platform/ohos/new.sh <name> [dir] [--bundle id] [--label "My App"] [--git]
 #
 # <name> is the directory's name under apps/ (dir overrides where it goes).
 # The bundle ID defaults to the kit demo's, so the app installs and runs with
@@ -14,13 +14,18 @@ name=
 dir=
 bundle=
 label=
+git_init=0
 
 while [ $# -gt 0 ]; do
 	case $1 in
 	--bundle) bundle=$2; shift 2 ;;
 	--label) label=$2; shift 2 ;;
+	--git)
+		git_init=1
+		shift
+		;;
 	-h | --help)
-		sed -n '2,11p' "$0" | sed 's/^# \{0,1\}//'
+		sed -n '2,10p' "$0" | sed 's/^# \{0,1\}//'
 		exit 0
 		;;
 	*)
@@ -31,7 +36,7 @@ while [ $# -gt 0 ]; do
 done
 
 if [ -z "$name" ]; then
-	echo "usage: $0 <name> [dir] [--bundle id] [--label \"My App\"]" >&2
+	echo "usage: $0 <name> [dir] [--bundle id] [--label \"My App\"] [--git]" >&2
 	exit 2
 fi
 
@@ -86,13 +91,14 @@ edit("app/entry/src/main/resources/base/element/string.json",
 edit("app/oh-package.json5", lambda s: s.replace('"name": "app"', f'"name": "{name}"'))
 edit("app/entry/oh-package.json5", lambda s: s.replace('"name": "entry"', '"name": "entry"'))
 
-# A new bundle ID can't use the old signing profile (it names the bundle):
-# drop it, and the build makes an unsigned HAP until DevEco signs it.
+# A signing profile names one bundle, so the old material cannot sign a new
+# bundle ID — and leaving it behind is how you end up with the material but no
+# products[].signingConfig that points at it (hvigor then says only "No
+# signingConfig found for product default"). Start from the unsigned template.
 if bundle != old:
-    edit("app/build-profile.json5", lambda s: s
-         .replace('"signingConfig": "default",\n', '')
-         .replace('"signingConfig": "default",', ''))
-    print("new.sh: dropped the old signing config; enable signing in DevEco before running")
+    (d / "app/build-profile.json5").write_text(
+        (d / "app/build-profile.example.json5").read_text())
+    print("new.sh: unsigned template in place; sign the new bundle in DevEco before running")
 PY
 
 # The project's own ways in, pointing at the kit's scripts.
@@ -109,6 +115,17 @@ set -eu
 exec "$here/run.sh" "\$(dirname "\$0")/app" -go "\$(dirname "\$0")/go" "\$@"
 SH
 chmod +x "$dir/build.sh" "$dir/run.sh"
+
+if [ "$git_init" = 1 ]; then
+	# A repository is opt-in: the default target is apps/<name>, which sits inside
+	# the kit's own work tree, and a nested .git there is a different project.
+	if up=$(git -C "$dir" rev-parse --show-toplevel 2>/dev/null) && [ "$up" != "$dir" ]; then
+		echo "new.sh: warning: $dir is inside the repository $up; this becomes a separate one" >&2
+	fi
+	git -C "$dir" init -q
+	echo "new.sh: git initialised in $dir — the first commit is yours:" >&2
+	echo "new.sh:   cd $dir && git add -A && git commit" >&2
+fi
 
 echo "gokit: $dir"
 echo "  cd $dir && ./run.sh" >&2

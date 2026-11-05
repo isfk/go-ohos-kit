@@ -41,6 +41,18 @@ if [ ! -f "$project/build-profile.json5" ]; then
 	echo "gokit: (DevEco → Project Structure → Signing Configs → Automatically generate signature)" >&2
 fi
 
+# DevEco's "Automatically generate signature" writes two separate things: the
+# material under signingConfigs, and products[].signingConfig that points at it.
+# It can leave the first without the second, and then the only symptom is
+# hvigor's "No signingConfig found for product default" after a full build.
+profile=$project/build-profile.json5
+if grep -q '"signingConfigs": \[$' "$profile" && ! grep -Eq '"signingConfig"[[:space:]]*:' "$profile"; then
+	echo "gokit: $profile has signing material but no product references it." >&2
+	echo "gokit: hvigor wants \"signingConfig\": \"default\" under app.products[] — add it, or" >&2
+	echo "gokit: press Apply in DevEco → Project Structure → Signing Configs, then run again." >&2
+	exit 1
+fi
+
 if [ -z "$go_dir" ]; then
 	go_dir=$root/go
 fi
@@ -54,9 +66,10 @@ hap=$project/entry/build/default/outputs/default/entry-default-signed.hap
 if [ ! -f "$hap" ]; then
 	# A HarmonyOS app only installs signed, and a signing profile names the
 	# bundle: a new one is signed in DevEco, once.
-	echo "gokit: the app isn't signed for $bundle." >&2
+	echo "gokit: hvigor left no signed HAP for $bundle." >&2
 	echo "gokit: open $project in DevEco once → Project Structure → Signing Configs →" >&2
 	echo "gokit: 'Automatically generate signature' (a Huawei ID), then run this again." >&2
+	echo "gokit: (a profile names one bundle — a new bundle ID needs its own signature)" >&2
 	exit 1
 fi
 echo "gokit: installing $bundle" >&2
