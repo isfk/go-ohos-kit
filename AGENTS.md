@@ -136,7 +136,9 @@ Go 内核         ← go/core：状态、逻辑、IO；goroutine 随便开
 - `session.start()` 在本项目的相机 API 版本里**不是 Promise**，`.then` 会静默炸。
 - `XComponent` 高度 0 = 没有 surface；别在 `Stack` 里随状态增删兄弟节点（会重建 surface）。
 - `user_grant` 权限（相机/定位）必须写 `reason` + `usedScene`，`system_grant`（传感器）不用。
-- 预览面板要用 `.aspectRatio(...)`，固定高度会把画面压扁。
+- 预览的比例要按**屏幕朝向**算（`screen.width < screen.height` → 用 `h/w`），不是按 `profile`：
+  档位写着 `1280×720`，但竖屏时到手的是转过 90° 的竖图，照档位画会横向拉宽约 3 倍。
+  面板盒子可以是 16:9（闲置面板不能太高），画面按真实比例撑出去、由 `.clip(true)` 居中裁切。
 - `aboutToDisappear` 抓不到 Home 键，后台处理要接 ability 的 `onBackground`（`AppStorage`）。
 - 鸿蒙里环境变量是空的（空 argv/envp 补丁），沙箱路径必须从 ArkTS 传进 Go。
 - 大块数据别用 JSON，用 `ArrayBuffer` + 按需解码（2000 行这个量级 JSON 完全够用，别优化错方向）。

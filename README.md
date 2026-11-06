@@ -258,8 +258,19 @@ session.commitConfig(); session.start();
 - **别在 Stack 里随状态增删 XComponent 的兄弟节点**：`if (!running) Text(...)` 会在
   `running` 翻 true 时把兄弟删掉 → **XComponent 被重建、换了一个新 surface**，而会话还画在
   老的那块上 → 一块黑。要隐藏用 `opacity(0)`，别动组件树。
-- **别用固定高度装预览**：1280×720 塞进 200px 高的框 = 画面压扁。用
-  `.aspectRatio(profile.size.width / profile.size.height)`。
+- **预览的比例要按屏幕算，不是按 profile 算**：档位全是横的（`1280×720` 这种），但竖屏
+  拿着时摄像头**把画面转好了才送进 surface**，到手是一张竖图。照 `profile` 的比例画 =
+  横向拉宽约 3 倍（真机实测）。正确做法：
+
+  ```ts
+  const screen = display.getDefaultDisplaySync();          // @kit.ArkUI
+  const portrait = screen.width < screen.height;
+  this.aspect = portrait ? profile.size.height / profile.size.width
+                         : profile.size.width / profile.size.height;
+  ```
+
+  面板盒子另算（16:9，让闲置面板不至于把下面的卡片顶出第一屏），画面用真实比例撑出去、
+  由盒子的 `.clip(true)` 居中裁掉超出的部分——**裁切，不拉伸**。固定高度装预览同样会压扁。
 - **`aboutToDisappear` 抓不到 Home 键**（页面还活着，只是看不见）。真正的时机是 ability 的
   `onBackground`：它把 `appLife().foreground = false` 写进那个 `@ObservedV2` 对象，组件用
   `@Local life` + `@Monitor('life.foreground')` 接住（V2 的深层路径监听）。相机在后台开着是
